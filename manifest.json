@@ -1,0 +1,16 @@
+{
+  "name": "grid-maker-ultimate",
+  "author": "chilos",
+  "version": "2.0.0",
+  "description": "Ultimate Grid Maker for Logseq",
+  "main": "dist/index.js",
+  "icon": "./icon.svg",
+  "theme": false,
+  "permissions": [
+    "editor"
+  ],
+  "logseq": {
+    "id": "grid-maker-ultimate-2025",
+    "title": "🔥 Grid Maker Ultimate"
+  }
+}
