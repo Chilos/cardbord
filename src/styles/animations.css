@@ -1,0 +1,148 @@
+/**
+ * Cardbord Animations
+ * GPU-accelerated animations using transform and opacity
+ */
+
+/* ===== FADE IN ===== */
+@keyframes cb-fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ===== SLIDE UP ===== */
+@keyframes cb-slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ===== PULSE ===== */
+@keyframes cb-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+}
+
+/* ===== BOUNCE ===== */
+@keyframes cb-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* ===== SHAKE ===== */
+@keyframes cb-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+/* ===== SPIN ===== */
+@keyframes cb-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== SCALE IN ===== */
+@keyframes cb-scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ===== SLIDE IN FROM RIGHT ===== */
+@keyframes cb-slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ===== SLIDE IN FROM LEFT ===== */
+@keyframes cb-slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ===== UTILITY CLASSES ===== */
+.cb-animate-fadeIn {
+  animation: cb-fadeIn var(--cb-transition-base);
+}
+
+.cb-animate-slideUp {
+  animation: cb-slideUp var(--cb-transition-slow) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cb-animate-pulse {
+  animation: cb-pulse 2s ease-in-out infinite;
+}
+
+.cb-animate-bounce {
+  animation: cb-bounce 0.5s ease-in-out;
+}
+
+.cb-animate-scaleIn {
+  animation: cb-scaleIn var(--cb-transition-base);
+}
+
+/* ===== TRANSITION HELPERS ===== */
+.cb-transition-all {
+  transition: all var(--cb-transition-base);
+}
+
+.cb-transition-transform {
+  transition: transform var(--cb-transition-base);
+}
+
+.cb-transition-opacity {
+  transition: opacity var(--cb-transition-base);
+}
+
+.cb-transition-colors {
+  transition: 
+    background-color var(--cb-transition-base),
+    border-color var(--cb-transition-base),
+    color var(--cb-transition-base);
+}

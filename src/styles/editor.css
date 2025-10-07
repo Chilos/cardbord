@@ -1,0 +1,478 @@
+/**
+ * Visual Editor Styles
+ * Стили для полнофункционального визуального редактора
+ */
+
+/* Overlay */
+.cardbord-visual-editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: cardbord-fade-in 0.2s ease-out;
+}
+
+/* Container */
+.cardbord-visual-editor-container {
+  background: var(--ls-primary-background-color, #fff);
+  color: var(--ls-primary-text-color, #111);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 95vw;
+  max-height: 95vh;
+  width: 1200px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: cardbord-scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Header */
+.cardbord-editor-header {
+  padding: 24px 32px;
+  border-bottom: 2px solid var(--ls-border-color, #e0e0e0);
+  background: linear-gradient(
+    135deg,
+    var(--ls-primary-background-color, #fff) 0%,
+    var(--ls-secondary-background-color, #f8f8f8) 100%
+  );
+}
+
+.cardbord-editor-title {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ls-primary-text-color, #111);
+}
+
+.cardbord-editor-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ls-secondary-text-color, #666);
+  opacity: 0.8;
+}
+
+/* Controls */
+.cardbord-editor-controls {
+  padding: 16px 32px;
+  background: var(--ls-secondary-background-color, #f8f8f8);
+  border-bottom: 1px solid var(--ls-border-color, #e0e0e0);
+}
+
+.cardbord-grid-size-control {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.cardbord-control-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ls-primary-text-color, #111);
+}
+
+.cardbord-number-input {
+  width: 70px;
+  padding: 6px 10px;
+  border: 2px solid var(--ls-border-color, #ddd);
+  border-radius: 6px;
+  background: var(--ls-primary-background-color, #fff);
+  color: var(--ls-primary-text-color, #111);
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.cardbord-number-input:focus {
+  outline: none;
+  border-color: var(--ls-active-primary-color, #4ECDC4);
+  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.1);
+}
+
+/* Workspace */
+.cardbord-editor-workspace {
+  flex: 1;
+  padding: 32px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cardbord-grid-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.cardbord-editor-arrows-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.cardbord-editor-arrows-svg path {
+  pointer-events: auto;
+}
+
+.cardbord-editor-arrows-svg polygon {
+  pointer-events: auto;
+}
+
+.cardbord-grid-editor {
+  display: grid;
+  gap: 10px;
+  position: relative;
+  z-index: 2;
+  margin-bottom: 20px;
+}
+
+/* Editor Cells */
+.cardbord-editor-cell {
+  border: 2px solid var(--ls-border-color, #ddd);
+  border-radius: 8px;
+  padding: 12px;
+  box-sizing: border-box;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  position: relative;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.cardbord-editor-cell-card {
+  cursor: move;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.cardbord-editor-cell-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.cardbord-editor-cell-empty {
+  font-size: 32px;
+  color: var(--ls-border-color, #ccc);
+  cursor: pointer;
+  background: var(--ls-tertiary-background-color, #fafafa);
+  border-style: dashed;
+}
+
+.cardbord-editor-cell-empty:hover {
+  background: var(--ls-quaternary-background-color, #f0f0f0);
+  border-color: var(--ls-active-primary-color, #4ECDC4);
+  color: var(--ls-active-primary-color, #4ECDC4);
+}
+
+.cardbord-editor-cell-dragover {
+  border-color: var(--ls-active-primary-color, #4ECDC4);
+  border-width: 3px;
+  background: rgba(78, 205, 196, 0.05);
+  transform: scale(1.02);
+}
+
+/* Anchor Points */
+.cardbord-anchor-point {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--ls-active-primary-color, #4ECDC4);
+  border: 2px solid var(--ls-primary-background-color, #fff);
+  border-radius: 50%;
+  cursor: crosshair;
+  opacity: 0;
+  transform: scale(0);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.cardbord-anchor-visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.cardbord-anchor-visible:hover {
+  background: var(--ls-active-secondary-color, #FF6B6B);
+  transform: scale(1.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.cardbord-anchor-top {
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+}
+
+.cardbord-anchor-top.cardbord-anchor-visible {
+  transform: translateX(-50%) scale(1);
+}
+
+.cardbord-anchor-top.cardbord-anchor-visible:hover {
+  transform: translateX(-50%) scale(1.3);
+}
+
+.cardbord-anchor-bottom {
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+}
+
+.cardbord-anchor-bottom.cardbord-anchor-visible {
+  transform: translateX(-50%) scale(1);
+}
+
+.cardbord-anchor-bottom.cardbord-anchor-visible:hover {
+  transform: translateX(-50%) scale(1.3);
+}
+
+.cardbord-anchor-left {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%) scale(0);
+}
+
+.cardbord-anchor-left.cardbord-anchor-visible {
+  transform: translateY(-50%) scale(1);
+}
+
+.cardbord-anchor-left.cardbord-anchor-visible:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+.cardbord-anchor-right {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%) scale(0);
+}
+
+.cardbord-anchor-right.cardbord-anchor-visible {
+  transform: translateY(-50%) scale(1);
+}
+
+.cardbord-anchor-right.cardbord-anchor-visible:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+/* Panels */
+.cardbord-panel {
+  padding: 20px;
+  background: var(--ls-secondary-background-color, #f8f8f8);
+  border-radius: 8px;
+  margin: 0 32px 20px 32px;
+  border: 1px solid var(--ls-border-color, #e0e0e0);
+  animation: cardbord-slide-down 0.3s ease-out;
+}
+
+.cardbord-panel-hidden {
+  display: none;
+}
+
+.cardbord-panel-title {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ls-primary-text-color, #111);
+}
+
+.cardbord-panel-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+/* Textarea */
+.cardbord-textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 12px;
+  border: 2px solid var(--ls-border-color, #ddd);
+  border-radius: 8px;
+  background: var(--ls-primary-background-color, #fff);
+  color: var(--ls-primary-text-color, #111);
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: all 0.2s;
+  margin-bottom: 16px;
+}
+
+.cardbord-textarea:focus {
+  outline: none;
+  border-color: var(--ls-active-primary-color, #4ECDC4);
+  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.1);
+}
+
+.cardbord-textarea::placeholder {
+  color: var(--ls-secondary-text-color, #999);
+}
+
+/* Color Section */
+.cardbord-color-section {
+  margin-bottom: 16px;
+}
+
+.cardbord-color-section .cardbord-control-label {
+  margin-bottom: 8px;
+}
+
+.cardbord-color-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cardbord-color-btn {
+  width: 44px;
+  height: 44px;
+  border: 3px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.cardbord-color-btn:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.cardbord-color-btn-selected {
+  border-color: var(--ls-primary-text-color, #111);
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Buttons */
+.cardbord-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardbord-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.cardbord-btn:active {
+  transform: translateY(0);
+}
+
+.cardbord-btn-primary {
+  background: var(--ls-active-primary-color, #4ECDC4);
+  color: #fff;
+}
+
+.cardbord-btn-primary:hover {
+  background: var(--ls-active-secondary-color, #45B7D1);
+}
+
+.cardbord-btn-secondary {
+  background: var(--ls-secondary-background-color, #e0e0e0);
+  color: var(--ls-primary-text-color, #111);
+}
+
+.cardbord-btn-secondary:hover {
+  background: var(--ls-tertiary-background-color, #d0d0d0);
+}
+
+.cardbord-btn-danger {
+  background: #FF6B6B;
+  color: #fff;
+}
+
+.cardbord-btn-danger:hover {
+  background: #FF5252;
+}
+
+.cardbord-btn-large {
+  padding: 14px 32px;
+  font-size: 16px;
+}
+
+/* Footer */
+.cardbord-editor-footer {
+  padding: 20px 32px;
+  border-top: 2px solid var(--ls-border-color, #e0e0e0);
+  background: var(--ls-secondary-background-color, #f8f8f8);
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+}
+
+/* Animations */
+@keyframes cardbord-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cardbord-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes cardbord-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scrollbar styling */
+.cardbord-editor-workspace::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.cardbord-editor-workspace::-webkit-scrollbar-track {
+  background: var(--ls-secondary-background-color, #f8f8f8);
+}
+
+.cardbord-editor-workspace::-webkit-scrollbar-thumb {
+  background: var(--ls-border-color, #ddd);
+  border-radius: 5px;
+}
+
+.cardbord-editor-workspace::-webkit-scrollbar-thumb:hover {
+  background: var(--ls-active-primary-color, #4ECDC4);
+}

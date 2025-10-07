@@ -1,3 +1,5 @@
-node_modules
-dist
-memory_bank
+node_modules/
+dist/
+.idea/
+*.log
+.DS_Store

@@ -1,16 +1,10 @@
 {
-  "name": "grid-maker-ultimate",
-  "author": "chilos",
-  "version": "2.0.0",
-  "description": "Ultimate Grid Maker for Logseq",
+  "name": "logseq-plugin-cardbord",
+  "author": "Cardbord Team",
+  "description": "Создание интерактивных сеток с карточками",
+  "version": "1.0.0",
   "main": "dist/index.js",
-  "icon": "./icon.svg",
-  "theme": false,
-  "permissions": [
-    "editor"
-  ],
-  "logseq": {
-    "id": "grid-maker-ultimate-2025",
-    "title": "🔥 Grid Maker Ultimate"
-  }
+  "id": "logseq-plugin-cardbord",
+  "title": "Cardbord",
+  "icon": "./icon.svg"
 }

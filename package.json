@@ -1,59 +1,23 @@
 {
-  "name": "logseq-cardbord-plugin",
-  "version": "0.1.0",
-  "description": "Interactive card grid system for Logseq with drag & drop, connections, and visual organization",
+  "name": "logseq-plugin-cardbord",
+  "version": "1.0.0",
+  "description": "Плагин для создания интерактивных сеток с карточками в Logseq",
   "main": "dist/index.js",
-  "author": "chilos",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text",
+    "dev": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text --watch"
+  },
+  "keywords": ["logseq", "plugin", "cards", "grid", "kanban"],
+  "author": "",
   "license": "MIT",
   "logseq": {
-    "id": "logseq-cardbord-plugin",
-    "title": "Cardbord - Interactive Card Grid", 
-    "icon": "./icon.svg",
-    "description": "Создавайте интерактивные сетки с карточками. Поддержка drag & drop, стрелок между карточками и визуальной организации информации.",
-    "main": "./dist/index.js",
-    "permissions": [
-      "editor"
-    ]
-  },
-  "scripts": {
-    "build": "webpack --mode=production",
-    "build:test": "NODE_ENV=test webpack --mode=production",
-    "build:simple": "NODE_ENV=simple webpack --mode=production",
-    "build:minimal": "NODE_ENV=minimal webpack --mode=production",
-    "dev": "webpack --mode=development --watch",
-    "test": "jest",
-    "lint": "eslint src/**/*.ts",
-    "format": "prettier --write src/**/*.ts"
-  },
-  "keywords": [
-    "logseq",
-    "plugin", 
-    "cards",
-    "grid",
-    "kanban",
-    "visualization",
-    "drag-drop",
-    "organization"
-  ],
-  "dependencies": {
-    "@logseq/libs": "^0.0.15"
+    "id": "logseq-plugin-cardbord",
+    "title": "Cardbord",
+    "icon": "./icon.svg"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "css-loader": "^6.8.1",
-    "eslint": "^8.45.0",
-    "html-webpack-plugin": "^5.5.3",
-    "jest": "^29.6.1",
-    "prettier": "^3.0.0",
-    "style-loader": "^3.3.3",
-    "ts-loader": "^9.4.4",
-    "typescript": "^5.1.6",
-    "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4"
-  },
-  "engines": {
-    "node": ">=16.0.0"
+    "@logseq/libs": "^0.0.17",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.0.0"
   }
 }

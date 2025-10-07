@@ -1,0 +1,71 @@
+/**
+ * Cardbord Theme System
+ * CSS Variables for consistent design system
+ */
+
+:root {
+  /* ===== SPACING ===== */
+  --cb-space-xs: 4px;
+  --cb-space-sm: 8px;
+  --cb-space-md: 12px;
+  --cb-space-lg: 16px;
+  --cb-space-xl: 24px;
+  --cb-space-2xl: 32px;
+
+  /* ===== BORDER RADIUS ===== */
+  --cb-radius-sm: 4px;
+  --cb-radius-md: 6px;
+  --cb-radius-lg: 8px;
+  --cb-radius-xl: 12px;
+  --cb-radius-full: 50%;
+
+  /* ===== TRANSITIONS ===== */
+  --cb-transition-fast: 150ms ease;
+  --cb-transition-base: 200ms ease;
+  --cb-transition-slow: 300ms ease;
+  --cb-transition-bounce: 300ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* ===== SHADOWS ===== */
+  --cb-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --cb-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --cb-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+  --cb-shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.3);
+
+  /* ===== Z-INDEX ===== */
+  --cb-z-base: 1;
+  --cb-z-dropdown: 10;
+  --cb-z-overlay: 9999;
+  --cb-z-modal: 10000;
+
+  /* ===== SIZING ===== */
+  --cb-cell-width: 160px;
+  --cb-cell-height: 160px;
+  --cb-anchor-size: 12px;
+  --cb-gap: 10px;
+  --cb-padding: 20px;
+
+  /* ===== TYPOGRAPHY ===== */
+  --cb-font-size-xs: 11px;
+  --cb-font-size-sm: 13px;
+  --cb-font-size-base: 14px;
+  --cb-font-size-lg: 16px;
+  --cb-font-size-xl: 18px;
+  --cb-font-size-2xl: 24px;
+
+  --cb-font-weight-normal: 400;
+  --cb-font-weight-medium: 500;
+  --cb-font-weight-semibold: 600;
+  --cb-font-weight-bold: 700;
+
+  --cb-line-height-tight: 1.25;
+  --cb-line-height-normal: 1.5;
+  --cb-line-height-relaxed: 1.75;
+}
+
+/* Dark mode adjustments for shadows */
+html[data-theme="dark"] {
+  --cb-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --cb-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --cb-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --cb-shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
