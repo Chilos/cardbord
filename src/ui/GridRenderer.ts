@@ -13,19 +13,30 @@ export class GridRenderer {
    */
   render(data: GridData, options: GridRenderOptions = {}): string {
     const { readonly = true, slotKey, showEditButton = true } = options;
-    
+
     const gridStyle = `
       grid-template-columns: repeat(${data.cols}, ${CELL_WIDTH}px);
       grid-template-rows: repeat(${data.rows}, ${CELL_HEIGHT}px);
       gap: ${GAP}px;
     `;
-    
+
+    // Рендерим заголовки колонок если есть
+    let headersHtml = '';
+    if (data.columnHeaders && data.columnHeaders.some(h => h)) {
+      headersHtml = `<div class="cardbord-column-headers" style="grid-template-columns: repeat(${data.cols}, ${CELL_WIDTH}px);">`;
+      for (let c = 0; c < data.cols; c++) {
+        const headerText = data.columnHeaders[c] || '';
+        headersHtml += `<div class="cardbord-column-header">${this.escapeHtml(headerText)}</div>`;
+      }
+      headersHtml += '</div>';
+    }
+
     // Рендерим ячейки
     let cellsHtml = '';
     for (let r = 0; r < data.rows; r++) {
       for (let c = 0; c < data.cols; c++) {
         const card = data.cards.find(card => card.row === r && card.col === c);
-        
+
         if (card) {
           // Ячейка с карточкой (рендерим markdown с контейнером для текста)
           cellsHtml += `<div class="cardbord-cell" data-row="${r}" data-col="${c}"><div class="cardbord-card" style="background: ${card.color};"><div class="cardbord-card-text">${renderMarkdown(card.text)}</div></div></div>`;
@@ -44,10 +55,11 @@ export class GridRenderer {
     // Вычисляем размеры для SVG
     const gridWidth = data.cols * CELL_WIDTH + (data.cols - 1) * GAP;
     const gridHeight = data.rows * CELL_HEIGHT + (data.rows - 1) * GAP;
-    const totalWidth = gridWidth + PADDING * 2;
-    const totalHeight = gridHeight + PADDING * 2;
 
-    return `<div class="cardbord-container" data-slot-id="${slotKey ?? ''}"><div class="cardbord-grid-wrapper" style="position: relative; padding: ${PADDING}px;">${editBtn}<svg class="cardbord-arrows" style="position:absolute; top:${PADDING+20}px; left:${PADDING+20}px; width:${gridWidth}px; height:${gridHeight}px; pointer-events:none; z-index:1;"></svg><div class="cardbord-grid" style="${gridStyle}">${cellsHtml}</div></div></div>`;
+    // Вычисляем offset для SVG с учетом заголовков
+    const headerOffset = (data.columnHeaders && data.columnHeaders.some(h => h)) ? 71 : 21;
+
+    return `<div class="cardbord-container" data-slot-id="${slotKey ?? ''}"><div class="cardbord-grid-wrapper" style="position: relative; padding: ${PADDING}px;">${editBtn}${headersHtml}<svg class="cardbord-arrows" style="position:absolute; top:${headerOffset}px; left:21; width:${gridWidth}px; height:${gridHeight}px; pointer-events:none; z-index:1;"></svg><div class="cardbord-grid" style="${gridStyle}">${cellsHtml}</div></div></div>`;
   }
   
   /**

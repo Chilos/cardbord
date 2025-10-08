@@ -27,6 +27,7 @@ export interface GridData {
   cols: number;
   cards: Card[];
   arrows: Arrow[];
+  columnHeaders?: string[]; // Опциональные заголовки колонок
 }
 
 // ===== GEOMETRY TYPES =====

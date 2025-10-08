@@ -444,6 +444,36 @@
   background: var(--ls-active-primary-color, #4ECDC4);
 }
 
+/* Headers Inputs */
+.cardbord-headers-inputs {
+  display: grid;
+  gap: 8px;
+}
+
+.cardbord-header-input {
+  padding: 8px 12px;
+  border: 2px solid var(--ls-border-color, #ddd);
+  border-radius: 6px;
+  background: var(--ls-primary-background-color, #fff);
+  color: var(--ls-primary-text-color, #111);
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.cardbord-header-input:focus {
+  outline: none;
+  border-color: var(--ls-active-primary-color, #4ECDC4);
+  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.1);
+}
+
+.cardbord-header-input::placeholder {
+  color: var(--ls-secondary-text-color, #999);
+  font-weight: 400;
+}
+
 /* Color Section */
 .cardbord-color-section {
   margin-bottom: 16px;

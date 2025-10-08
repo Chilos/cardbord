@@ -56,6 +56,7 @@ export class VisualEditor {
     this.renderGridEditor();
     this.initializeArrowRenderer();
     this.renderArrows();
+    this.renderHeadersInputs(); // Рендерим поля заголовков если они есть
   }
 
   /**
@@ -91,7 +92,13 @@ export class VisualEditor {
                 <input id="cb-visual-cols" type="number" min="1" max="10" value="${this.currentData.cols}" class="cardbord-number-input">
               </label>
               <button id="cb-visual-update-grid" class="cardbord-btn cardbord-btn-secondary">Обновить сетку</button>
+              <button id="cb-visual-toggle-headers" class="cardbord-btn cardbord-btn-secondary">${this.currentData.columnHeaders ? '✓ Заголовки' : '+ Заголовки'}</button>
             </div>
+          </div>
+
+          <div id="cb-visual-headers-panel" class="cardbord-panel ${this.currentData.columnHeaders ? '' : 'cardbord-panel-hidden'}">
+            <h3 class="cardbord-panel-title">Заголовки колонок</h3>
+            <div id="cb-visual-headers-inputs" class="cardbord-headers-inputs"></div>
           </div>
 
           <div class="cardbord-editor-workspace">
@@ -728,9 +735,21 @@ export class VisualEditor {
         c => c.row < this.currentData.rows && c.col < this.currentData.cols
       );
 
+      // Обновляем заголовки если они есть
+      if (this.currentData.columnHeaders) {
+        this.updateHeadersArray();
+      }
+
       this.renderGridEditor();
       this.initializeArrowRenderer();
       this.renderArrows();
+      this.renderHeadersInputs();
+    });
+
+    // Toggle заголовков колонок
+    const toggleHeadersBtn = this.targetDoc.getElementById('cb-visual-toggle-headers');
+    toggleHeadersBtn?.addEventListener('click', () => {
+      this.toggleHeaders();
     });
 
     // Сохранение карточки
@@ -880,5 +899,82 @@ export class VisualEditor {
     if (this.arrowRenderer) {
       this.arrowRenderer.updateColors(colors);
     }
+  }
+
+  /**
+   * Переключает отображение заголовков колонок
+   */
+  private toggleHeaders(): void {
+    if (this.currentData.columnHeaders) {
+      // Убираем заголовки
+      delete this.currentData.columnHeaders;
+    } else {
+      // Добавляем пустые заголовки
+      this.currentData.columnHeaders = Array(this.currentData.cols).fill('');
+    }
+
+    // Обновляем UI
+    const panel = this.targetDoc.getElementById('cb-visual-headers-panel');
+    const btn = this.targetDoc.getElementById('cb-visual-toggle-headers');
+
+    if (panel) {
+      if (this.currentData.columnHeaders) {
+        panel.classList.remove('cardbord-panel-hidden');
+      } else {
+        panel.classList.add('cardbord-panel-hidden');
+      }
+    }
+
+    if (btn) {
+      btn.textContent = this.currentData.columnHeaders ? '✓ Заголовки' : '+ Заголовки';
+    }
+
+    this.renderHeadersInputs();
+    this.renderGridEditor();
+  }
+
+  /**
+   * Рендерит поля ввода для заголовков
+   */
+  private renderHeadersInputs(): void {
+    const container = this.targetDoc.getElementById('cb-visual-headers-inputs');
+    if (!container || !this.currentData.columnHeaders) return;
+
+    container.innerHTML = '';
+    container.style.display = 'grid';
+    container.style.gridTemplateColumns = `repeat(${this.currentData.cols}, 1fr)`;
+    container.style.gap = '8px';
+
+    for (let i = 0; i < this.currentData.cols; i++) {
+      const input = this.targetDoc.createElement('input');
+      input.type = 'text';
+      input.className = 'cardbord-header-input';
+      input.placeholder = `Колонка ${i + 1}`;
+      input.value = this.currentData.columnHeaders[i] || '';
+      input.dataset.colIndex = i.toString();
+
+      input.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        const idx = parseInt(target.dataset.colIndex || '0');
+        if (this.currentData.columnHeaders) {
+          this.currentData.columnHeaders[idx] = target.value;
+        }
+      });
+
+      container.appendChild(input);
+    }
+  }
+
+  /**
+   * Обновляет массив заголовков при изменении количества колонок
+   */
+  private updateHeadersArray(): void {
+    if (!this.currentData.columnHeaders) return;
+
+    const newHeaders = Array(this.currentData.cols).fill('');
+    for (let i = 0; i < Math.min(this.currentData.cols, this.currentData.columnHeaders.length); i++) {
+      newHeaders[i] = this.currentData.columnHeaders[i];
+    }
+    this.currentData.columnHeaders = newHeaders;
   }
 }
