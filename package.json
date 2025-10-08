@@ -5,9 +5,18 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text",
-    "dev": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text --watch"
+    "dev": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text --watch",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage"
   },
-  "keywords": ["logseq", "plugin", "cards", "grid", "kanban"],
+  "keywords": [
+    "logseq",
+    "plugin",
+    "cards",
+    "grid",
+    "kanban"
+  ],
   "author": "",
   "license": "MIT",
   "logseq": {
@@ -17,7 +26,13 @@
   },
   "devDependencies": {
     "@logseq/libs": "^0.0.17",
+    "@types/node": "^24.7.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/ui": "^3.2.4",
     "esbuild": "^0.19.0",
-    "typescript": "^5.0.0"
+    "happy-dom": "^17.6.1",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }

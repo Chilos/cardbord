@@ -242,7 +242,7 @@ export class CardbordPlugin {
         const pageName = (link as HTMLElement).dataset.page;
         if (pageName) {
           console.log(`[${PLUGIN_NAME}] Navigating to page:`, pageName);
-          await logseq.Editor.scrollToBlockInPage(pageName);
+          await logseq.Editor.scrollToBlockInPage(pageName, pageName);
         }
       });
     });
@@ -255,7 +255,7 @@ export class CardbordPlugin {
         const tagName = (tag as HTMLElement).dataset.tag;
         if (tagName) {
           console.log(`[${PLUGIN_NAME}] Navigating to tag:`, tagName);
-          await logseq.Editor.scrollToBlockInPage(tagName);
+          await logseq.Editor.scrollToBlockInPage(tagName, tagName);
         }
       });
     });

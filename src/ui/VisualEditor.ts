@@ -5,7 +5,7 @@
 
 import type { GridData, Card, Arrow, AnchorSide, EditorState } from '../types';
 import { ArrowRenderer } from './ArrowRenderer';
-import { CELL_WIDTH, CELL_HEIGHT, GAP, PADDING, ANCHOR_SIZE } from '../utils/constants';
+import { CELL_WIDTH, CELL_HEIGHT, GAP } from '../utils/constants';
 import { encodeGridData } from '../utils/encoding';
 import { RENDERER_TYPE } from '../utils/constants';
 import { getNearestSide, getAnchorPoint } from '../utils/geometry';
@@ -155,14 +155,17 @@ export class VisualEditor {
    * Инициализирует ArrowRenderer
    */
   private initializeArrowRenderer(): void {
-    const svg = this.targetDoc.getElementById('cb-visual-arrows-svg') as SVGSVGElement;
-    if (!svg) return;
+    const svg = this.targetDoc.getElementById('cb-visual-arrows-svg');
+    if (!svg) {
+      console.error('[Cardbord] SVG element not found');
+      return;
+    }
 
     // Вычисляем размеры на основе данных сетки (как в GridRenderer)
     const gridWidth = this.currentData.cols * CELL_WIDTH + (this.currentData.cols - 1) * GAP;
     const gridHeight = this.currentData.rows * CELL_HEIGHT + (this.currentData.rows - 1) * GAP;
 
-    this.arrowRenderer = new ArrowRenderer(svg, this.colors, false);
+    this.arrowRenderer = new ArrowRenderer(svg as SVGSVGElement, this.colors, false);
     this.arrowRenderer.setSize(gridWidth, gridHeight);
   }
 
@@ -252,14 +255,14 @@ export class VisualEditor {
     });
 
     // Клик для показа anchor points
-    cell.addEventListener('click', (e) => {
+    cell.addEventListener('click', () => {
       if (!this.state.isDragging && !this.state.isCreatingArrow) {
         this.toggleCardSelection(card, cell);
       }
     });
 
     // Двойной клик для редактирования
-    cell.addEventListener('dblclick', (e) => {
+    cell.addEventListener('dblclick', () => {
       if (!this.state.isDragging) {
         this.state.selectedCell = { row: card.row, col: card.col };
         this.showCardEditor(card);
@@ -267,13 +270,13 @@ export class VisualEditor {
     });
 
     // Drag events
-    cell.addEventListener('dragstart', (e) => {
+    cell.addEventListener('dragstart', () => {
       this.state.isDragging = true;
       this.state.draggedCard = card;
       cell.style.opacity = '0.4';
     });
 
-    cell.addEventListener('dragend', (e) => {
+    cell.addEventListener('dragend', () => {
       setTimeout(() => { this.state.isDragging = false; }, 100);
       cell.style.opacity = '1';
       this.clearDragHighlights();
@@ -433,7 +436,7 @@ export class VisualEditor {
   /**
    * Обрабатывает завершение создания стрелки при mouseup
    */
-  private handleArrowEnd = (e: MouseEvent): void => {
+  private handleArrowEnd = (): void => {
     if (!this.state.isCreatingArrow) return;
 
     // Проверяем, есть ли магнитная привязка
