@@ -214,6 +214,13 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+.cardbord-anchor-magnetic {
+  background: var(--ls-active-primary-color, #4ECDC4);
+  transform: scale(1.5);
+  box-shadow: 0 0 12px rgba(78, 205, 196, 0.8);
+  animation: cb-pulse 0.6s ease-in-out infinite;
+}
+
 .cardbord-anchor-top {
   top: -6px;
   left: 50%;

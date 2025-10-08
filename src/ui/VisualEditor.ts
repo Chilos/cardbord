@@ -8,7 +8,7 @@ import { ArrowRenderer } from './ArrowRenderer';
 import { CELL_WIDTH, CELL_HEIGHT, GAP, PADDING, ANCHOR_SIZE } from '../utils/constants';
 import { encodeGridData } from '../utils/encoding';
 import { RENDERER_TYPE } from '../utils/constants';
-import { getNearestSide } from '../utils/geometry';
+import { getNearestSide, getAnchorPoint } from '../utils/geometry';
 
 export class VisualEditor {
   private static MODAL_ID = 'cardbord-visual-editor';
@@ -216,11 +216,15 @@ export class VisualEditor {
    */
   private setupCardCell(cell: HTMLElement, card: Card): void {
     cell.style.background = card.color;
-    cell.textContent = card.text;
     cell.draggable = true;
     cell.classList.add('cardbord-editor-cell-card');
+    cell.dataset.cardId = card.id;
 
-    // Создаем anchor points
+    // Создаем текстовый узел ПЕРЕД anchor points
+    const textNode = this.targetDoc.createTextNode(card.text);
+    cell.appendChild(textNode);
+
+    // Создаем anchor points ПОСЛЕ текста
     const anchors: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
     anchors.forEach(side => {
       const anchor = this.createAnchorPoint(side, card);
@@ -285,11 +289,6 @@ export class VisualEditor {
       this.startArrowCreation(card, side);
     });
 
-    anchor.addEventListener('mouseup', (e) => {
-      e.stopPropagation();
-      this.endArrowCreation(card, side);
-    });
-
     return anchor;
   }
 
@@ -297,6 +296,8 @@ export class VisualEditor {
    * Начинает создание стрелки
    */
   private startArrowCreation(card: Card, side: AnchorSide): void {
+    console.log('[Cardbord] Starting arrow creation', { cardId: card.id, side });
+
     // Отключаем draggable на всех карточках
     this.targetDoc.querySelectorAll('.cardbord-editor-cell-card').forEach((el: any) => {
       el.draggable = false;
@@ -305,12 +306,181 @@ export class VisualEditor {
     this.state.isCreatingArrow = true;
     this.state.arrowStartCard = card;
     this.state.arrowStartSide = side;
+
+    // Добавляем слушатель mousemove для фантомной стрелки (на document для глобального отслеживания)
+    console.log('[Cardbord] Adding mousemove listener to document');
+    this.targetDoc.addEventListener('mousemove', this.handleArrowDrag);
+
+    // Добавляем слушатель mouseup для завершения
+    console.log('[Cardbord] Adding mouseup listener');
+    this.targetDoc.addEventListener('mouseup', this.handleArrowEnd);
+  }
+
+  /**
+   * Обрабатывает перетаскивание стрелки и рисует фантомную линию
+   */
+  private handleArrowDrag = (e: MouseEvent): void => {
+    if (!this.state.isCreatingArrow || !this.state.arrowStartCard || !this.state.arrowStartSide) {
+      console.debug('[Cardbord] Arrow drag skipped - not creating arrow');
+      return;
+    }
+
+    const svg = this.targetDoc.querySelector('.cardbord-editor-arrows-svg') as SVGSVGElement;
+    if (!svg) {
+      console.error('[Cardbord] SVG not found for phantom arrow');
+      return;
+    }
+
+    console.debug('[Cardbord] Drawing phantom arrow', { x: e.clientX, y: e.clientY });
+
+    // Удаляем старую фантомную линию
+    const existingPhantom = svg.querySelector('.cardbord-phantom-arrow');
+    if (existingPhantom) existingPhantom.remove();
+
+    // Получаем координаты начальной точки
+    const startPoint = getAnchorPoint(this.state.arrowStartCard, this.state.arrowStartSide, false);
+
+    // Получаем координаты мыши относительно SVG
+    const svgRect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - svgRect.left;
+    const mouseY = e.clientY - svgRect.top;
+
+    // Убираем класс magnetic со всех anchor points
+    this.targetDoc.querySelectorAll('.cardbord-anchor-magnetic').forEach((el) => {
+      el.classList.remove('cardbord-anchor-magnetic');
+    });
+
+    // Проверяем, находимся ли мы рядом с какой-то карточкой
+    let endPoint = { x: mouseX, y: mouseY };
+    let snapToAnchor = false;
+    let magneticAnchorEl: HTMLElement | null = null;
+    let targetCard: Card | null = null;
+    let targetSide: AnchorSide | null = null;
+
+    // Ищем ближайший anchor point
+    for (const card of this.currentData.cards) {
+      if (card.id === this.state.arrowStartCard.id) continue;
+
+      // Проверяем расстояние до каждой грани
+      const sides: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
+      for (const side of sides) {
+        const anchorPoint = getAnchorPoint(card, side, false);
+        const dist = Math.sqrt(Math.pow(mouseX - anchorPoint.x, 2) + Math.pow(mouseY - anchorPoint.y, 2));
+
+        // Если курсор близко к anchor point (в пределах 30px), магнитим к нему
+        if (dist < 30) {
+          endPoint = anchorPoint;
+          snapToAnchor = true;
+          targetCard = card;
+          targetSide = side;
+
+          // Находим DOM элемент anchor point
+          const cell = this.targetDoc.querySelector(`[data-card-id="${card.id}"]`);
+          if (cell) {
+            magneticAnchorEl = cell.querySelector(`.cardbord-anchor-${side}`) as HTMLElement;
+          }
+          break;
+        }
+      }
+      if (snapToAnchor) break;
+    }
+
+    // Сохраняем информацию о магнитной привязке
+    (this.state as any).magneticTargetCard = targetCard;
+    (this.state as any).magneticTargetSide = targetSide;
+
+    // Подсвечиваем anchor point при магнитном притяжении
+    if (magneticAnchorEl) {
+      magneticAnchorEl.classList.add('cardbord-anchor-magnetic');
+    }
+
+    // Рисуем фантомную линию
+    const phantomLine = this.targetDoc.createElementNS('http://www.w3.org/2000/svg', 'line');
+    phantomLine.setAttribute('class', 'cardbord-phantom-arrow');
+    phantomLine.setAttribute('x1', startPoint.x.toString());
+    phantomLine.setAttribute('y1', startPoint.y.toString());
+    phantomLine.setAttribute('x2', endPoint.x.toString());
+    phantomLine.setAttribute('y2', endPoint.y.toString());
+    phantomLine.setAttribute('stroke', snapToAnchor ? this.colors[0] : '#999');
+    phantomLine.setAttribute('stroke-width', '2');
+    phantomLine.setAttribute('stroke-dasharray', '5,5');
+    phantomLine.setAttribute('opacity', '0.6');
+    phantomLine.style.pointerEvents = 'none';
+
+    svg.appendChild(phantomLine);
+  };
+
+  /**
+   * Обрабатывает завершение создания стрелки при mouseup
+   */
+  private handleArrowEnd = (e: MouseEvent): void => {
+    if (!this.state.isCreatingArrow) return;
+
+    // Проверяем, есть ли магнитная привязка
+    const targetCard = (this.state as any).magneticTargetCard;
+    const targetSide = (this.state as any).magneticTargetSide;
+
+    if (targetCard && targetSide) {
+      this.endArrowCreation(targetCard, targetSide);
+    } else {
+      // Отменяем создание стрелки если не прицепились к карточке
+      this.cancelArrowCreation();
+    }
+  };
+
+  /**
+   * Отменяет создание стрелки
+   */
+  private cancelArrowCreation(): void {
+    // Удаляем слушатели
+    this.targetDoc.removeEventListener('mousemove', this.handleArrowDrag);
+    this.targetDoc.removeEventListener('mouseup', this.handleArrowEnd);
+
+    // Удаляем фантомную линию
+    const svg = this.targetDoc.querySelector('.cardbord-editor-arrows-svg') as SVGSVGElement;
+    if (svg) {
+      const phantom = svg.querySelector('.cardbord-phantom-arrow');
+      if (phantom) phantom.remove();
+    }
+
+    // Убираем подсветку anchor points
+    this.targetDoc.querySelectorAll('.cardbord-anchor-magnetic').forEach((el) => {
+      el.classList.remove('cardbord-anchor-magnetic');
+    });
+
+    // Включаем обратно draggable
+    this.targetDoc.querySelectorAll('.cardbord-editor-cell-card').forEach((el: any) => {
+      el.draggable = true;
+    });
+
+    // Сбрасываем состояние
+    this.state.isCreatingArrow = false;
+    this.state.arrowStartCard = null;
+    this.state.arrowStartSide = null;
+    (this.state as any).magneticTargetCard = null;
+    (this.state as any).magneticTargetSide = null;
   }
 
   /**
    * Завершает создание стрелки
    */
   private endArrowCreation(targetCard: Card, targetSide: AnchorSide): void {
+    // Удаляем слушатели
+    this.targetDoc.removeEventListener('mousemove', this.handleArrowDrag);
+    this.targetDoc.removeEventListener('mouseup', this.handleArrowEnd);
+
+    // Удаляем фантомную линию
+    const svg = this.targetDoc.querySelector('.cardbord-editor-arrows-svg') as SVGSVGElement;
+    if (svg) {
+      const phantom = svg.querySelector('.cardbord-phantom-arrow');
+      if (phantom) phantom.remove();
+    }
+
+    // Убираем подсветку anchor points
+    this.targetDoc.querySelectorAll('.cardbord-anchor-magnetic').forEach((el) => {
+      el.classList.remove('cardbord-anchor-magnetic');
+    });
+
     // Включаем обратно draggable
     this.targetDoc.querySelectorAll('.cardbord-editor-cell-card').forEach((el: any) => {
       el.draggable = true;
@@ -334,11 +504,12 @@ export class VisualEditor {
       this.renderArrows();
     }
 
-    setTimeout(() => {
-      this.state.isCreatingArrow = false;
-      this.state.arrowStartCard = null;
-      this.state.arrowStartSide = null;
-    }, 100);
+    // Сбрасываем состояние
+    this.state.isCreatingArrow = false;
+    this.state.arrowStartCard = null;
+    this.state.arrowStartSide = null;
+    (this.state as any).magneticTargetCard = null;
+    (this.state as any).magneticTargetSide = null;
   }
 
   /**
