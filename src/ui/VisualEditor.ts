@@ -356,6 +356,7 @@ export class VisualEditor {
     let magneticAnchorEl: HTMLElement | null = null;
     let targetCard: Card | null = null;
     let targetSide: AnchorSide | null = null;
+    let minDistance = 30; // Начальный порог для магнитного притяжения
 
     // Ищем ближайший anchor point
     for (const card of this.currentData.cards) {
@@ -367,22 +368,21 @@ export class VisualEditor {
         const anchorPoint = getAnchorPoint(card, side, false);
         const dist = Math.sqrt(Math.pow(mouseX - anchorPoint.x, 2) + Math.pow(mouseY - anchorPoint.y, 2));
 
-        // Если курсор близко к anchor point (в пределах 30px), магнитим к нему
-        if (dist < 30) {
+        // Если курсор близко к anchor point И это ближайшая точка
+        if (dist < minDistance) {
           endPoint = anchorPoint;
           snapToAnchor = true;
           targetCard = card;
           targetSide = side;
+          minDistance = dist; // Обновляем минимальное расстояние
 
           // Находим DOM элемент anchor point
           const cell = this.targetDoc.querySelector(`[data-card-id="${card.id}"]`);
           if (cell) {
             magneticAnchorEl = cell.querySelector(`.cardbord-anchor-${side}`) as HTMLElement;
           }
-          break;
         }
       }
-      if (snapToAnchor) break;
     }
 
     // Сохраняем информацию о магнитной привязке
