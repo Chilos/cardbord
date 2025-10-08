@@ -1,6 +1,6 @@
 {
   "name": "logseq-plugin-cardbord",
-  "version": "1.0.0",
+  "version": "0.1.3",
   "description": "Плагин для создания интерактивных сеток с карточками в Logseq",
   "main": "dist/index.js",
   "scripts": {
