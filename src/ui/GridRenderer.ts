@@ -5,6 +5,7 @@
 
 import type { GridData, GridRenderOptions } from '../types';
 import { CELL_WIDTH, CELL_HEIGHT, GAP, PADDING } from '../utils/constants';
+import { renderMarkdown } from '../utils/markdown';
 
 export class GridRenderer {
   /**
@@ -26,8 +27,8 @@ export class GridRenderer {
         const card = data.cards.find(card => card.row === r && card.col === c);
         
         if (card) {
-          // Ячейка с карточкой
-          cellsHtml += `<div class="cardbord-cell" data-row="${r}" data-col="${c}"><div class="cardbord-card" style="background: ${card.color};">${this.escapeHtml(card.text)}</div></div>`;
+          // Ячейка с карточкой (рендерим markdown с контейнером для текста)
+          cellsHtml += `<div class="cardbord-cell" data-row="${r}" data-col="${c}"><div class="cardbord-card" style="background: ${card.color};"><div class="cardbord-card-text">${renderMarkdown(card.text)}</div></div></div>`;
         } else {
           // Пустая ячейка
           cellsHtml += `<div class="cardbord-cell" data-row="${r}" data-col="${c}"><span class="cardbord-cell-empty"></span></div>`;

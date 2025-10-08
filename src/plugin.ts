@@ -14,6 +14,7 @@ import { GridDataManager } from './storage/GridDataManager';
 import { EditorModal } from './ui/EditorModal';
 import { VisualEditor } from './ui/VisualEditor';
 import { ArrowRenderer } from './ui/ArrowRenderer';
+import { applyTextScaling } from './utils/textScaling';
 
 // Import styles
 import themeCSS from './styles/theme.css';
@@ -216,10 +217,47 @@ export class CardbordPlugin {
           console.debug('[Cardbord][Arrow] Rendering arrows for slot:', slot, 'arrows:', data.arrows.length);
           const renderer = new ArrowRenderer(svg, this.colors, false);
           renderer.renderArrows(data.arrows, data.cards);
+
+          // Добавляем обработчики кликов для ссылок и тегов
+          this.attachLinkHandlers(container);
+
+          // Применяем автомасштабирование текста
+          applyTextScaling(container);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] Arrow render failed:`, err);
         }
       }, 100); // Увеличил задержку для гарантии рендеринга DOM
+    });
+  }
+
+  /**
+   * Прикрепляет обработчики кликов для ссылок и тегов
+   */
+  private attachLinkHandlers(container: HTMLElement): void {
+    // Обработчики для [[page links]]
+    const pageLinks = container.querySelectorAll('.cardbord-page-link');
+    pageLinks.forEach((link) => {
+      link.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const pageName = (link as HTMLElement).dataset.page;
+        if (pageName) {
+          console.log(`[${PLUGIN_NAME}] Navigating to page:`, pageName);
+          await logseq.Editor.scrollToBlockInPage(pageName);
+        }
+      });
+    });
+
+    // Обработчики для #tags
+    const tags = container.querySelectorAll('.cardbord-tag');
+    tags.forEach((tag) => {
+      tag.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const tagName = (tag as HTMLElement).dataset.tag;
+        if (tagName) {
+          console.log(`[${PLUGIN_NAME}] Navigating to tag:`, tagName);
+          await logseq.Editor.scrollToBlockInPage(tagName);
+        }
+      });
     });
   }
 

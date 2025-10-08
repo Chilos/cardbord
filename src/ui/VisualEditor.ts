@@ -9,6 +9,8 @@ import { CELL_WIDTH, CELL_HEIGHT, GAP, PADDING, ANCHOR_SIZE } from '../utils/con
 import { encodeGridData } from '../utils/encoding';
 import { RENDERER_TYPE } from '../utils/constants';
 import { getNearestSide, getAnchorPoint } from '../utils/geometry';
+import { renderMarkdown } from '../utils/markdown';
+import { applyEditorTextScaling } from '../utils/textScaling';
 
 export class VisualEditor {
   private static MODAL_ID = 'cardbord-visual-editor';
@@ -101,10 +103,14 @@ export class VisualEditor {
 
           <div id="cb-visual-card-editor" class="cardbord-panel cardbord-panel-hidden">
             <h3 class="cardbord-panel-title">Редактировать карточку</h3>
+            <div class="cardbord-textarea-help">
+              Поддерживается Logseq форматирование: **bold**, *italic*, ~~strike~~, ^^highlight^^, \`code\`, [[links]], #tags
+            </div>
             <textarea
               id="cb-visual-card-text"
               class="cardbord-textarea"
-              placeholder="Введите текст карточки..."
+              placeholder="Введите текст карточки...&#10;Поддерживается multiline и Logseq форматирование"
+              rows="6"
             ></textarea>
             <div class="cardbord-color-section">
               <label class="cardbord-control-label">Цвет:</label>
@@ -190,6 +196,11 @@ export class VisualEditor {
         editor.appendChild(cell);
       }
     }
+
+    // Применяем автомасштабирование текста после рендеринга
+    setTimeout(() => {
+      applyEditorTextScaling(editor);
+    }, 50);
   }
 
   /**
@@ -220,9 +231,11 @@ export class VisualEditor {
     cell.classList.add('cardbord-editor-cell-card');
     cell.dataset.cardId = card.id;
 
-    // Создаем текстовый узел ПЕРЕД anchor points
-    const textNode = this.targetDoc.createTextNode(card.text);
-    cell.appendChild(textNode);
+    // Создаем контейнер для текста с markdown ПЕРЕД anchor points
+    const textContainer = this.targetDoc.createElement('div');
+    textContainer.className = 'cardbord-card-text';
+    textContainer.innerHTML = renderMarkdown(card.text);
+    cell.appendChild(textContainer);
 
     // Создаем anchor points ПОСЛЕ текста
     const anchors: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
@@ -649,6 +662,16 @@ export class VisualEditor {
     });
 
     deleteBtn.style.display = card ? 'inline-block' : 'none';
+
+    // Разрешаем multiline - предотвращаем срабатывание Enter как submit
+    textArea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.stopPropagation(); // Не даем событию всплыть выше
+      }
+    });
+
+    // Фокус на textarea
+    setTimeout(() => textArea.focus(), 100);
   }
 
   /**
