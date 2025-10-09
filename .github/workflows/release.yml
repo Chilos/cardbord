@@ -34,7 +34,7 @@ jobs:
       - name: Create release package
         run: |
           mkdir -p release
-          cp dist/index.js release/
+          cp dist/index.js release/dist/
           cp manifest.json release/
           cp package.json release/
           cp icon.svg release/
