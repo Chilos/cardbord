@@ -3,4 +3,4 @@ dist/
 .idea/
 *.log
 .DS_Store
-./coverage
+coverage/

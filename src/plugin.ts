@@ -159,13 +159,13 @@ export class CardbordPlugin {
    * Регистрирует slash команду
    */
   private registerSlashCommand(): void {
-    logseq.Editor.registerSlashCommand(RENDERER_TYPE, async () => {
+    logseq.Editor.registerSlashCommand('Cardbord Grid', async () => {
       console.log(`[${PLUGIN_NAME}] Slash command triggered`);
       const defaultData = createDefaultGridData();
       const encoded = encodeGridData(defaultData);
       await logseq.Editor.insertAtEditingCursor(`{{renderer ${RENDERER_TYPE}, ${encoded}}}`);
     });
-    console.log(`[${PLUGIN_NAME}] Slash command registered`);
+    console.log(`[${PLUGIN_NAME}] Slash command registered as "Cardbord Grid"`);
   }
 
   /**
