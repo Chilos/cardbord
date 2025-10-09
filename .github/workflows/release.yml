@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Update version from tag
+        run: npm run update-version
+
       - name: Build plugin
         run: npm run build
 
@@ -33,7 +36,7 @@ jobs:
 
       - name: Create release package
         run: |
-          mkdir -p release
+          mkdir -p release/dist
           cp dist/index.js release/dist/
           cp manifest.json release/
           cp package.json release/

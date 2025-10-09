@@ -4,7 +4,9 @@
   "description": "Плагин для создания интерактивных сеток с карточками в Logseq",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text",
+    "build": "npm run update-version && esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text",
+    "build:release": "npm run update-version && npm run build",
+    "update-version": "node scripts/update-version.js",
     "dev": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text --watch",
     "test": "vitest",
     "test:ui": "vitest --ui",
