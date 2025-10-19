@@ -31,8 +31,8 @@ export class EditorModal {
     const textareaContent = this.escapeHtml(JSON.stringify(normalized, null, 2));
 
     const modalHtml = `
-      <div id="${EditorModal.MODAL_ID}" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 9999; display: flex; align-items: center; justify-content: center;">
-        <div style="background: var(--ls-primary-background-color, #fff); color: var(--ls-primary-text-color, #111); padding: 24px; border-radius: 8px; width: min(800px, 90vw); max-height: 90vh; overflow: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+      <div id="${EditorModal.MODAL_ID}" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: var(--cb-z-overlay, 900); display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; z-index: var(--cb-z-modal, 1000); background: var(--ls-primary-background-color, #fff); color: var(--ls-primary-text-color, #111); padding: 24px; border-radius: 8px; width: min(800px, 90vw); max-height: 90vh; overflow: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
           <h3 style="margin: 0 0 12px 0;">Редактор сетки (JSON)</h3>
           <p style="margin: 0 0 12px 0; opacity: .7;">Временная версия редактора. Вставьте/измените JSON и сохраните.</p>
           <textarea id="cb-json" style="width: 100%; height: 300px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 8px; box-sizing: border-box; border: 1px solid var(--ls-border-color, #ddd); border-radius: 6px;">${textareaContent}</textarea>

@@ -3,7 +3,7 @@
  * Поддерживает drag-and-drop, создание стрелок через anchor points, редактирование
  */
 
-import type { GridData, Card, Arrow, AnchorSide, EditorState, Point } from '../types';
+import type { GridData, Card, Arrow, AnchorSide, EditorState, Point, StickerCorner, CardSticker } from '../types';
 import { ArrowRenderer } from './ArrowRenderer';
 import { CELL_WIDTH, CELL_HEIGHT, GAP } from '../utils/constants';
 import { encodeGridData } from '../utils/encoding';
@@ -14,6 +14,13 @@ import { applyEditorTextScaling } from '../utils/textScaling';
 
 export class VisualEditor {
   private static MODAL_ID = 'cardbord-visual-editor';
+  private static readonly STICKER_CORNERS: StickerCorner[] = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
+  private static readonly STICKER_CONTROL_META: Array<{ corner: StickerCorner; icon: string; label: string }> = [
+    { corner: 'top-left', icon: '↖', label: 'Верхний левый' },
+    { corner: 'top-right', icon: '↗', label: 'Верхний правый' },
+    { corner: 'bottom-right', icon: '↘', label: 'Нижний правый' },
+    { corner: 'bottom-left', icon: '↙', label: 'Нижний левый' }
+  ];
   private currentData: GridData;
   private blockUuid: string;
   private colors: string[];
@@ -27,6 +34,7 @@ export class VisualEditor {
   private pendingLayoutRefresh: number | null = null;
   private gridPixelWidth = 0;
   private gridPixelHeight = 0;
+  private stickerDrafts: Partial<Record<StickerCorner, string>> = {};
 
   private static readonly ZOOM_MIN = 0.45;
   private static readonly ZOOM_MAX = 1.6;
@@ -60,6 +68,7 @@ export class VisualEditor {
     this.currentZoom = 1;
     this.fitZoom = 1;
     this.isAutoZoom = true;
+    this.stickerDrafts = {};
     this.disposeViewportObserver();
 
     // Удаляем существующую модалку если есть
@@ -85,12 +94,33 @@ export class VisualEditor {
     const modal = this.targetDoc.getElementById(VisualEditor.MODAL_ID);
     if (modal) modal.remove();
     this.disposeViewportObserver();
+    this.stickerDrafts = {};
   }
 
   /**
    * Генерирует HTML модального окна
    */
   private renderModal(): string {
+    const stickerControlsMarkup = VisualEditor.STICKER_CONTROL_META.map(({ corner, icon, label }) => `
+      <div class="cardbord-sticker-control">
+        <label class="cardbord-sticker-control-label" for="cb-visual-sticker-${corner}">
+          <span class="cardbord-sticker-icon">${icon}</span>
+          ${label}
+        </label>
+        <div class="cardbord-sticker-input-row">
+          <input
+            id="cb-visual-sticker-${corner}"
+            class="cardbord-sticker-input"
+            type="text"
+            data-corner="${corner}"
+            maxlength="16"
+            placeholder="Подпись"
+          />
+          <button type="button" class="cardbord-sticker-clear" data-corner="${corner}" title="Очистить">✕</button>
+        </div>
+      </div>
+    `).join('');
+
     return `
       <div id="${VisualEditor.MODAL_ID}" class="cardbord-visual-editor-overlay">
         <div class="cardbord-visual-editor-container">
@@ -159,6 +189,16 @@ export class VisualEditor {
             <div class="cardbord-color-section">
               <label class="cardbord-control-label">Цвет:</label>
               <div id="cb-visual-color-picker" class="cardbord-color-picker"></div>
+            </div>
+            <div class="cardbord-sticker-section">
+              <div class="cardbord-sticker-header">
+                <label class="cardbord-control-label">Стикеры по углам</label>
+                <button id="cb-visual-clear-stickers" class="cardbord-link-btn" type="button">Очистить все</button>
+              </div>
+              <div class="cardbord-sticker-grid">
+                ${stickerControlsMarkup}
+              </div>
+              <p class="cardbord-sticker-hint">До четырёх коротких заметок (по одному на каждый угол), максимум 16 символов.</p>
             </div>
             <div class="cardbord-panel-actions">
               <button id="cb-visual-save-card" class="cardbord-btn cardbord-btn-primary">💾 Сохранить</button>
@@ -544,6 +584,17 @@ export class VisualEditor {
     textContainer.innerHTML = renderMarkdown(card.text);
     cell.appendChild(textContainer);
 
+    if (Array.isArray(card.stickers) && card.stickers.length) {
+      cell.classList.add('cardbord-editor-cell--with-sticker');
+      card.stickers.forEach(sticker => {
+        cell.appendChild(this.createStickerElement(card, sticker));
+        console.debug('[Cardbord][Sticker] Added sticker element in editor cell', {
+          cardId: card.id,
+          sticker
+        });
+      });
+    }
+
     // Создаем anchor points ПОСЛЕ текста
     const anchors: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
     anchors.forEach(side => {
@@ -610,6 +661,17 @@ export class VisualEditor {
     });
 
     return anchor;
+  }
+
+  private createStickerElement(card: Card, sticker: CardSticker): HTMLElement {
+    const element = this.targetDoc.createElement('div');
+    const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(sticker.text.trim());
+    element.className = `cardbord-card-sticker cardbord-card-sticker--${sticker.corner}`;
+    if (isEmojiOnly) element.classList.add('cardbord-card-sticker--emoji');
+    element.textContent = sticker.text;
+    element.setAttribute('data-corner', sticker.corner);
+    element.style.setProperty('--cb-sticker-accent', sticker.color ?? card.color);
+    return element;
   }
 
   /**
@@ -949,6 +1011,10 @@ export class VisualEditor {
 
     editor.classList.remove('cardbord-panel-hidden');
     textArea.value = card?.text || '';
+    console.debug('[Cardbord][Sticker] showCardEditor', {
+      cardId: card?.id,
+      stickers: card?.stickers
+    });
 
     colorPicker.innerHTML = this.colors.map(color =>
       `<button
@@ -966,6 +1032,56 @@ export class VisualEditor {
         btn.classList.add('cardbord-color-btn-selected');
       });
     });
+
+    this.stickerDrafts = {};
+    if (card?.stickers) {
+      card.stickers.forEach(({ corner, text }) => {
+        this.stickerDrafts[corner] = text;
+      });
+    }
+
+    const stickerInputs = Array.from(this.targetDoc.querySelectorAll<HTMLInputElement>('.cardbord-sticker-input'));
+    stickerInputs.forEach(input => {
+      const corner = input.dataset.corner as StickerCorner | undefined;
+      if (!corner) return;
+      input.value = this.stickerDrafts[corner] ?? '';
+      input.oninput = () => {
+        const value = input.value;
+        if (value.trim()) {
+          this.stickerDrafts[corner] = value;
+        } else {
+          delete this.stickerDrafts[corner];
+        }
+      };
+    });
+
+    const perCornerClearButtons = Array.from(this.targetDoc.querySelectorAll<HTMLButtonElement>('.cardbord-sticker-clear'));
+    perCornerClearButtons.forEach(btn => {
+      const corner = btn.dataset.corner as StickerCorner | undefined;
+      if (!corner) return;
+      btn.onclick = (event) => {
+        event.preventDefault();
+        const input = this.targetDoc.querySelector<HTMLInputElement>(`#cb-visual-sticker-${corner}`);
+        if (input) input.value = '';
+        delete this.stickerDrafts[corner];
+        console.debug('[Cardbord][Sticker] Sticker cleared in editor', {
+          cardId: card?.id,
+          corner
+        });
+      };
+    });
+
+    const clearAllBtn = this.targetDoc.getElementById('cb-visual-clear-stickers') as HTMLButtonElement | null;
+    if (clearAllBtn) {
+      clearAllBtn.onclick = (event) => {
+        event.preventDefault();
+        this.stickerDrafts = {};
+        stickerInputs.forEach(input => {
+          input.value = '';
+        });
+        console.debug('[Cardbord][Sticker] Cleared all stickers in editor', { cardId: card?.id });
+      };
+    }
 
     deleteBtn.style.display = card ? 'inline-block' : 'none';
 
@@ -1117,12 +1233,30 @@ export class VisualEditor {
       c => c.row === this.state.selectedCell!.row && c.col === this.state.selectedCell!.col
     );
 
+    const stickers = VisualEditor.STICKER_CORNERS.reduce<CardSticker[]>((acc, corner) => {
+      const draft = this.stickerDrafts[corner];
+      if (!draft) return acc;
+      const trimmed = draft.trim();
+      if (!trimmed) {
+        delete this.stickerDrafts[corner];
+        return acc;
+      }
+      acc.push({ corner, text: trimmed.slice(0, 16) });
+      return acc;
+    }, []);
+
+    this.stickerDrafts = stickers.reduce<Partial<Record<StickerCorner, string>>>((acc, sticker) => {
+      acc[sticker.corner] = sticker.text;
+      return acc;
+    }, {});
+
     const card: Card = {
       id: existingCardIndex >= 0 ? this.currentData.cards[existingCardIndex].id : Date.now().toString(),
       text,
       color,
       row: this.state.selectedCell.row,
-      col: this.state.selectedCell.col
+      col: this.state.selectedCell.col,
+      stickers: stickers.length ? stickers : undefined
     };
 
     if (existingCardIndex >= 0) {
@@ -1130,6 +1264,14 @@ export class VisualEditor {
     } else {
       this.currentData.cards.push(card);
     }
+
+    console.debug('[Cardbord][Sticker] saveCard', {
+      cell: this.state.selectedCell,
+      stickers,
+      color,
+      hasExisting: existingCardIndex >= 0
+    });
+    console.debug('[Cardbord][Sticker] cardSavedState', card);
 
     const editor = this.targetDoc.getElementById('cb-visual-card-editor');
     editor?.classList.add('cardbord-panel-hidden');

@@ -5,12 +5,21 @@
 
 // ===== CORE DATA TYPES =====
 
+export type StickerCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+export interface CardSticker {
+  corner: StickerCorner;
+  text: string;
+  color?: string;
+}
+
 export interface Card {
   id: string;
   text: string;
   color: string;
   row: number;
   col: number;
+  stickers?: CardSticker[];
 }
 
 export interface Arrow {

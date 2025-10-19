@@ -33,9 +33,11 @@
 
   /* ===== Z-INDEX ===== */
   --cb-z-base: 1;
-  --cb-z-dropdown: 10;
-  --cb-z-overlay: 9999;
-  --cb-z-modal: 10000;
+  --cb-z-elevated: 5;
+  --cb-z-floating: 20;
+  --cb-z-dropdown: 30;
+  --cb-z-overlay: 900;
+  --cb-z-modal: 1000;
 
   /* ===== SIZING ===== */
   --cb-cell-width: 160px;

@@ -17,8 +17,8 @@ import {
 import { ARROW_SAMPLE_POINTS, ARROW_SEGMENTS, ARROW_STROKE_WIDTH } from '../utils/constants';
 
 type ArrowRoute =
-  | { kind: 'cubic'; points: Point[] }
-  | { kind: 'orthogonal'; points: Point[] };
+  | { kind: 'cubic'; points: Point[]; passThroughCardIds?: string[] }
+  | { kind: 'orthogonal'; points: Point[]; passThroughCardIds?: string[] };
 
 export class ArrowRenderer {
   private svg: SVGSVGElement;
@@ -158,7 +158,7 @@ export class ArrowRenderer {
       const intersections = this.getIntersectingCards(samples, arrow, cards);
       bezierCandidates.push({ points: samples, intersections });
       if (intersections.length === 0) {
-        return { kind: 'cubic', points: samples };
+        return { kind: 'cubic', points: samples, passThroughCardIds: [] };
       }
     }
 
@@ -180,7 +180,11 @@ export class ArrowRenderer {
       const allowHorizontalPassThrough = horizontalFlow && (allIntersectionsShareFromRow || allIntersectionsShareToRow);
 
       if (allowPassThrough || allowVerticalPassThrough || allowHorizontalPassThrough) {
-        return { kind: 'cubic', points: firstCandidate.points };
+        return {
+          kind: 'cubic',
+          points: firstCandidate.points,
+          passThroughCardIds: firstCandidate.intersections.map(card => card.id)
+        };
       }
     }
 
@@ -194,12 +198,15 @@ export class ArrowRenderer {
     );
     const orthogonalSamples = this.samplePolyline(orthogonalPath);
     if (!pathIntersectsCards(orthogonalSamples, cards, arrow, this.includePadding)) {
-      return { kind: 'orthogonal', points: orthogonalSamples };
+      return { kind: 'orthogonal', points: orthogonalSamples, passThroughCardIds: [] };
     }
 
     // Возвращаем последний из bezьер-кандидатов если других вариантов нет
     const lastCandidate = bezierCandidates[bezierCandidates.length - 1];
-    return { kind: 'cubic', points: lastCandidate ? lastCandidate.points : orthogonalSamples };
+    return {
+      kind: 'cubic',
+      points: lastCandidate ? lastCandidate.points : orthogonalSamples
+    };
   }
 
   /**
@@ -278,7 +285,12 @@ export class ArrowRenderer {
     return segments;
   }
 
-  private segmentIntersectsCards(p1: Point, p2: Point, arrow: Arrow, cards: Card[]): boolean {
+  private segmentIntersectsCards(
+    p1: Point,
+    p2: Point,
+    arrow: Arrow,
+    cards: Card[]
+  ): boolean {
     for (const card of cards) {
       if (card.id === arrow.from || card.id === arrow.to) continue;
       const rect = getCardRect(card, this.includePadding);
