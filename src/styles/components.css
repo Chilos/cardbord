@@ -319,12 +319,27 @@
   pointer-events: all;
   transition: 
     stroke-width var(--cb-transition-fast),
-    opacity var(--cb-transition-fast);
+    opacity var(--cb-transition-fast),
+    filter var(--cb-transition-fast);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
 }
 
 .cardbord-arrow-path:hover {
-  stroke-width: 3 !important;
-  opacity: 0.8;
+  stroke-width: 4 !important;
+  opacity: 0.9;
+}
+
+.cardbord-arrow-group-hover .cardbord-arrow-path {
+  stroke-width: 4 !important;
+  opacity: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
+}
+
+.cardbord-arrow-hit {
+  stroke: transparent;
+  stroke-width: 12;
+  fill: none;
+  pointer-events: stroke;
 }
 
 /* ===== ANCHOR POINTS ===== */

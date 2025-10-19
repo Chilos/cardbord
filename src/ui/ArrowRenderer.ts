@@ -4,8 +4,21 @@
  */
 
 import type { Arrow, Card, Point } from '../types';
-import { getAnchorPoint, calculateBezierControlPoint, getPointOnQuadraticBezier, getCardRect } from '../utils/geometry';
-import { ARROW_SEGMENTS } from '../utils/constants';
+import {
+  buildCubicBezierPath,
+  getCardRect,
+  getPointOnCubicBezier,
+  pathIntersectsCards,
+  buildOrthogonalPath,
+  optimiseOrthogonalPath,
+  distance,
+  lineIntersectsRect
+} from '../utils/geometry';
+import { ARROW_SAMPLE_POINTS, ARROW_SEGMENTS, ARROW_STROKE_WIDTH } from '../utils/constants';
+
+type ArrowRoute =
+  | { kind: 'cubic'; points: Point[] }
+  | { kind: 'orthogonal'; points: Point[] };
 
 export class ArrowRenderer {
   private svg: SVGSVGElement;
@@ -34,15 +47,15 @@ export class ArrowRenderer {
     this.colors.forEach((color, idx) => {
       const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
       marker.setAttribute('id', `arrowhead-${idx}`);
-      marker.setAttribute('markerWidth', '10');
-      marker.setAttribute('markerHeight', '10');
-      marker.setAttribute('refX', '9');
-      marker.setAttribute('refY', '3');
+      marker.setAttribute('markerWidth', '12');
+      marker.setAttribute('markerHeight', '12');
+      marker.setAttribute('refX', '10');
+      marker.setAttribute('refY', '4');
       marker.setAttribute('orient', 'auto');
       marker.setAttribute('markerUnits', 'userSpaceOnUse');
       
       const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      polygon.setAttribute('points', '0 0, 10 3, 0 6');
+      polygon.setAttribute('points', '0 1, 10 4, 0 7');
       polygon.setAttribute('fill', color);
       
       marker.appendChild(polygon);
@@ -87,32 +100,33 @@ export class ArrowRenderer {
     
     if (!fromCard || !toCard) return;
 
-    // Логи координат карточек
-    const fromRect = getCardRect(fromCard, this.includePadding);
-    const toRect = getCardRect(toCard, this.includePadding);
-    console.debug('[Cardbord][Arrow] card rects', { fromCard: arrow.from, fromRect, toCard: arrow.to, toRect });
+    const route = this.buildRoute(arrow, fromCard, toCard, cards);
+    const segments = this.calculateSegments(route.points, arrow, cards);
+    console.debug('[Cardbord][Arrow] route(meta)', {
+      kind: route.kind,
+      segments: segments.length,
+      points: route.points.length
+    });
 
-    // Получаем точки начала и конца
-    const start = getAnchorPoint(fromCard, arrow.fromSide, this.includePadding);
-    const end = getAnchorPoint(toCard, arrow.toSide, this.includePadding);
-    console.debug('[Cardbord][Arrow] anchors', { start, end, fromSide: arrow.fromSide, toSide: arrow.toSide });
-
-    // Вычисляем контрольную точку для кривой Безье
-    const control = calculateBezierControlPoint(start, end);
-    console.debug('[Cardbord][Arrow] control', { control });
-
-    // Делим кривую на сегменты и проверяем пересечения с карточками
-    const segments = this.calculateSegments(start, control, end, arrow, cards);
-    console.debug('[Cardbord][Arrow] segments(meta)', { count: segments.length, first: segments[0], last: segments[segments.length - 1] });
+    if (segments.length === 0) {
+      return;
+    }
 
     // Создаем группу для всех частей стрелки
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     group.classList.add('cardbord-arrow-group');
+    group.addEventListener('mouseenter', () => {
+      group.classList.add('cardbord-arrow-group-hover');
+    });
+    group.addEventListener('mouseleave', () => {
+      group.classList.remove('cardbord-arrow-group-hover');
+    });
 
     // Рисуем каждый сегмент
     segments.forEach((segment, idx) => {
       const isLast = idx === segments.length - 1;
-      this.renderSegment(group, segment, arrow, isLast, start, control, end);
+      const segmentPoints = route.points.slice(segment.startIndex, segment.endIndex + 1);
+      this.renderSegment(group, segmentPoints, arrow, segment.dashed, isLast);
     });
 
     // Добавляем обработчик клика
@@ -128,51 +142,64 @@ export class ArrowRenderer {
   }
 
   /**
-   * Вычисляет сегменты стрелки (сплошные и пунктирные)
+   * Строит маршрут стрелки
    */
-  private calculateSegments(
-    start: Point,
-    control: Point,
-    end: Point,
+  private buildRoute(
     arrow: Arrow,
+    fromCard: Card,
+    toCard: Card,
     cards: Card[]
-  ): Array<{ start: number; end: number; dashed: boolean }> {
-    const points: Array<{ t: number; intersects: boolean }> = [];
-
-    // Создаем точки вдоль кривой
-    for (let i = 0; i <= ARROW_SEGMENTS; i++) {
-      const t = i / ARROW_SEGMENTS;
-      const point = getPointOnQuadraticBezier(start, control, end, t);
-      
-      // Проверяем пересечение с карточками (кроме начальной и конечной)
-      let intersects = false;
-      for (const card of cards) {
-        if (card.id === arrow.from || card.id === arrow.to) continue;
-        const rect = getCardRect(card, this.includePadding);
-        if (point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h) {
-          intersects = true;
-          break;
-        }
-      }
-      points.push({ t, intersects });
-    }
-
-    // Группируем точки в сегменты
-    const segments: Array<{ start: number; end: number; dashed: boolean }> = [];
-    let segmentStart = 0;
-    let currentType = points[0].intersects;
-
-    for (let i = 1; i <= points.length; i++) {
-      const isLast = i === points.length;
-      const typeChanged = !isLast && points[i].intersects !== currentType;
-      if (typeChanged || isLast) {
-        segments.push({ start: segmentStart, end: i - 1, dashed: currentType });
-        segmentStart = i;
-        if (!isLast) currentType = points[i].intersects;
+  ): ArrowRoute {
+    const allowPassThrough = fromCard.row === toCard.row || fromCard.col === toCard.col;
+    const bezierCandidates: Array<{ points: Point[]; intersections: Card[] }> = [];
+    for (let multiplier = 1; multiplier <= 3.2; multiplier += 0.6) {
+      const bezier = buildCubicBezierPath(fromCard, toCard, arrow, this.includePadding, multiplier);
+      const samples = this.sampleBezier(bezier);
+      const intersections = this.getIntersectingCards(samples, arrow, cards);
+      bezierCandidates.push({ points: samples, intersections });
+      if (intersections.length === 0) {
+        return { kind: 'cubic', points: samples };
       }
     }
 
-    return segments;
+    if (bezierCandidates.length > 0) {
+      const firstCandidate = bezierCandidates[0];
+      const verticalFlow =
+        arrow.fromSide === 'top' || arrow.fromSide === 'bottom' ||
+        arrow.toSide === 'top' || arrow.toSide === 'bottom';
+      const horizontalFlow =
+        arrow.fromSide === 'left' || arrow.fromSide === 'right' ||
+        arrow.toSide === 'left' || arrow.toSide === 'right';
+
+      const allIntersectionsShareFromColumn = firstCandidate.intersections.every(card => card.col === fromCard.col);
+      const allIntersectionsShareToColumn = firstCandidate.intersections.every(card => card.col === toCard.col);
+      const allIntersectionsShareFromRow = firstCandidate.intersections.every(card => card.row === fromCard.row);
+      const allIntersectionsShareToRow = firstCandidate.intersections.every(card => card.row === toCard.row);
+
+      const allowVerticalPassThrough = verticalFlow && (allIntersectionsShareFromColumn || allIntersectionsShareToColumn);
+      const allowHorizontalPassThrough = horizontalFlow && (allIntersectionsShareFromRow || allIntersectionsShareToRow);
+
+      if (allowPassThrough || allowVerticalPassThrough || allowHorizontalPassThrough) {
+        return { kind: 'cubic', points: firstCandidate.points };
+      }
+    }
+
+    // Попробуем ортогональный маршрут как fallback
+    const orthogonalPath = buildOrthogonalPath(
+      fromCard,
+      toCard,
+      arrow,
+      this.includePadding,
+      (path) => optimiseOrthogonalPath(path, cards, arrow, this.includePadding)
+    );
+    const orthogonalSamples = this.samplePolyline(orthogonalPath);
+    if (!pathIntersectsCards(orthogonalSamples, cards, arrow, this.includePadding)) {
+      return { kind: 'orthogonal', points: orthogonalSamples };
+    }
+
+    // Возвращаем последний из bezьер-кандидатов если других вариантов нет
+    const lastCandidate = bezierCandidates[bezierCandidates.length - 1];
+    return { kind: 'cubic', points: lastCandidate ? lastCandidate.points : orthogonalSamples };
   }
 
   /**
@@ -180,53 +207,137 @@ export class ArrowRenderer {
    */
   private renderSegment(
     group: SVGGElement,
-    segment: { start: number; end: number; dashed: boolean },
+    segmentPoints: Point[],
     arrow: Arrow,
-    isLast: boolean,
-    startPoint: Point,
-    controlPoint: Point,
-    endPoint: Point
+    dashed: boolean,
+    isLast: boolean
   ): void {
+    const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-
-    const startT = segment.start / ARROW_SEGMENTS;
-    const endT = segment.end / ARROW_SEGMENTS;
-
-    // Сэмплируем реальные координаты по кривой Безье
-    const steps = Math.max(2, segment.end - segment.start);
-    const coords: Array<Point> = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = startT + (i / steps) * (endT - startT);
-      coords.push(getPointOnQuadraticBezier(startPoint, controlPoint, endPoint, t));
-    }
-
-    // Строим path по наборам точек
     let d = '';
-    coords.forEach((p, i) => {
+    segmentPoints.forEach((p, i) => {
       d += (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`);
     });
+    hitPath.setAttribute('d', d);
     path.setAttribute('d', d);
 
-    // Логируем итоговый путь для диагностики
-    if (segment.start === 0) {
-      console.debug('[Cardbord][Arrow] path(first segment)', { arrowId: arrow.id, d, startT, endT });
-    }
+    hitPath.setAttribute('stroke', 'transparent');
+    hitPath.setAttribute('stroke-width', '12');
+    hitPath.setAttribute('fill', 'none');
+    hitPath.setAttribute('pointer-events', 'stroke');
+    hitPath.classList.add('cardbord-arrow-hit');
 
     path.setAttribute('stroke', arrow.color);
-    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-width', ARROW_STROKE_WIDTH.toString());
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.classList.add('cardbord-arrow-path');
 
-    if (segment.dashed) path.setAttribute('stroke-dasharray', '5,5');
+    if (dashed) path.setAttribute('stroke-dasharray', '6,6');
 
     if (isLast) {
       const colorIdx = this.colors.indexOf(arrow.color);
       if (colorIdx >= 0) path.setAttribute('marker-end', `url(#arrowhead-${colorIdx})`);
     }
 
+    group.appendChild(hitPath);
     group.appendChild(path);
+  }
+
+  private calculateSegments(
+    points: Point[],
+    arrow: Arrow,
+    cards: Card[]
+  ): Array<{ startIndex: number; endIndex: number; dashed: boolean }> {
+    if (points.length < 2) {
+      return [];
+    }
+
+    const segments: Array<{ startIndex: number; endIndex: number; dashed: boolean }> = [];
+    let segmentStart = 0;
+    let currentDashed = false;
+
+    for (let i = 1; i < points.length; i++) {
+      const p1 = points[i - 1];
+      const p2 = points[i];
+      const intersects = this.segmentIntersectsCards(p1, p2, arrow, cards);
+      const isLast = i === points.length - 1;
+
+      if (intersects !== currentDashed) {
+        segments.push({ startIndex: segmentStart, endIndex: i - 1, dashed: currentDashed });
+        segmentStart = i - 1;
+        currentDashed = intersects;
+      }
+
+      if (isLast) {
+        segments.push({ startIndex: segmentStart, endIndex: i, dashed: currentDashed });
+      }
+    }
+
+    return segments;
+  }
+
+  private segmentIntersectsCards(p1: Point, p2: Point, arrow: Arrow, cards: Card[]): boolean {
+    for (const card of cards) {
+      if (card.id === arrow.from || card.id === arrow.to) continue;
+      const rect = getCardRect(card, this.includePadding);
+      if (lineIntersectsRect(p1, p2, rect)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private getIntersectingCards(points: Point[], arrow: Arrow, cards: Card[]): Card[] {
+    const hits: Card[] = [];
+    const seen = new Set<string>();
+
+    for (let i = 1; i < points.length; i++) {
+      const p1 = points[i - 1];
+      const p2 = points[i];
+
+      for (const card of cards) {
+        if (card.id === arrow.from || card.id === arrow.to) continue;
+        if (seen.has(card.id)) continue;
+        const rect = getCardRect(card, this.includePadding);
+        if (lineIntersectsRect(p1, p2, rect)) {
+          seen.add(card.id);
+          hits.push(card);
+        }
+      }
+    }
+
+    return hits;
+  }
+
+  private sampleBezier(bezier: { start: Point; control1: Point; control2: Point; end: Point }): Point[] {
+    const points: Point[] = [];
+    for (let i = 0; i <= ARROW_SAMPLE_POINTS; i++) {
+      const t = i / ARROW_SAMPLE_POINTS;
+      points.push(getPointOnCubicBezier(bezier.start, bezier.control1, bezier.control2, bezier.end, t));
+    }
+    return points;
+  }
+
+  private samplePolyline(points: Point[]): Point[] {
+    if (points.length === 0) return points;
+    const sampled: Point[] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const start = points[i];
+      const end = points[i + 1];
+      const segLength = Math.max(distance(start, end), 1);
+      const steps = Math.max(2, Math.ceil(segLength / (ARROW_SEGMENTS / 2)));
+      for (let step = 0; step < steps; step++) {
+        const t = step / steps;
+        sampled.push({
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * t
+        });
+      }
+    }
+    sampled.push(points[points.length - 1]);
+    return sampled;
   }
 
   /**

@@ -18,9 +18,22 @@ export const DEFAULT_COLS = 2;
 
 // Arrow rendering
 export const ARROW_STROKE_WIDTH = 2;
-export const ARROW_CURVATURE_FACTOR = 0.2;
-export const ARROW_CURVATURE_MAX = 50;
-export const ARROW_SEGMENTS = 50;
+export const ARROW_CURVATURE_FACTOR = 0.24;
+export const ARROW_CURVATURE_MIN = 24;
+export const ARROW_CURVATURE_MAX = 80;
+export const ARROW_CURVATURE_STEP = 12;
+export const ARROW_SIDE_MULTIPLIER: Record<string, number> = {
+  top: 1.1,
+  right: 1.0,
+  bottom: 1.1,
+  left: 1.0
+};
+export const ARROW_EXIT_OFFSET = 28;
+export const ARROW_ORTHOGONAL_THRESHOLD = 0.4;
+export const ARROW_ORTHOGONAL_MAX_OFFSET = 64;
+export const ARROW_ORTHOGONAL_STEP = 16;
+export const ARROW_SEGMENTS = 70;
+export const ARROW_SAMPLE_POINTS = 120;
 
 // Plugin metadata
 export const PLUGIN_NAME = 'Cardbord';
