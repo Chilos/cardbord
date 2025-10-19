@@ -3,7 +3,7 @@
  * Поддерживает drag-and-drop, создание стрелок через anchor points, редактирование
  */
 
-import type { GridData, Card, Arrow, AnchorSide, EditorState } from '../types';
+import type { GridData, Card, Arrow, AnchorSide, EditorState, Point } from '../types';
 import { ArrowRenderer } from './ArrowRenderer';
 import { CELL_WIDTH, CELL_HEIGHT, GAP } from '../utils/constants';
 import { encodeGridData } from '../utils/encoding';
@@ -20,6 +20,19 @@ export class VisualEditor {
   private state: EditorState;
   private targetDoc: Document;
   private arrowRenderer: ArrowRenderer | null = null;
+  private currentZoom = 1;
+  private fitZoom = 1;
+  private isAutoZoom = true;
+  private viewportObserver: ResizeObserver | null = null;
+  private pendingLayoutRefresh: number | null = null;
+  private gridPixelWidth = 0;
+  private gridPixelHeight = 0;
+
+  private static readonly ZOOM_MIN = 0.45;
+  private static readonly ZOOM_MAX = 1.6;
+  private static readonly ZOOM_STEP = 0.1;
+  private static readonly VIEWPORT_PADDING = 48;
+  private static readonly MIN_FIT_ZOOM = 0.65;
 
   constructor(colors: string[]) {
     this.colors = colors;
@@ -44,6 +57,10 @@ export class VisualEditor {
   show(data: GridData, blockUuid: string): void {
     this.currentData = JSON.parse(JSON.stringify(data));
     this.blockUuid = blockUuid;
+    this.currentZoom = 1;
+    this.fitZoom = 1;
+    this.isAutoZoom = true;
+    this.disposeViewportObserver();
 
     // Удаляем существующую модалку если есть
     const existing = this.targetDoc.getElementById(VisualEditor.MODAL_ID);
@@ -57,6 +74,8 @@ export class VisualEditor {
     this.initializeArrowRenderer();
     this.renderArrows();
     this.renderHeadersInputs(); // Рендерим поля заголовков если они есть
+    this.refreshWorkspaceLayout(true);
+    this.initViewportObserver();
   }
 
   /**
@@ -65,6 +84,7 @@ export class VisualEditor {
   hide(): void {
     const modal = this.targetDoc.getElementById(VisualEditor.MODAL_ID);
     if (modal) modal.remove();
+    this.disposeViewportObserver();
   }
 
   /**
@@ -102,9 +122,26 @@ export class VisualEditor {
           </div>
 
           <div class="cardbord-editor-workspace">
-            <div class="cardbord-grid-wrapper">
-              <svg id="cb-visual-arrows-svg" class="cardbord-editor-arrows-svg"></svg>
-              <div id="cb-visual-grid-editor" class="cardbord-grid-editor"></div>
+            <div class="cardbord-zoom-controls">
+              <button id="cb-visual-zoom-fit" class="cardbord-btn cardbord-btn-secondary cardbord-zoom-btn">Подогнать</button>
+              <div class="cardbord-zoom-controls-group">
+                <button id="cb-visual-zoom-out" class="cardbord-btn cardbord-btn-secondary cardbord-zoom-btn">-</button>
+                <span id="cb-visual-zoom-value" class="cardbord-zoom-value">100%</span>
+                <button id="cb-visual-zoom-in" class="cardbord-btn cardbord-btn-secondary cardbord-zoom-btn">+</button>
+              </div>
+            </div>
+            <div id="cb-visual-workspace-viewport" class="cardbord-workspace-viewport">
+              <div id="cb-visual-grid-container" class="cardbord-grid-container">
+                <div id="cb-visual-grid-scale" class="cardbord-grid-scale">
+                  <div id="cb-visual-grid-wrapper" class="cardbord-grid-wrapper">
+                    <div id="cb-visual-column-headers" class="cardbord-grid-floating-headers"></div>
+                    <div id="cb-visual-grid-canvas" class="cardbord-grid-canvas">
+                      <svg id="cb-visual-arrows-svg" class="cardbord-editor-arrows-svg"></svg>
+                      <div id="cb-visual-grid-editor" class="cardbord-grid-editor"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -151,6 +188,12 @@ export class VisualEditor {
     `;
   }
 
+  private getGridDimensions(): { width: number; height: number } {
+    const width = this.currentData.cols * CELL_WIDTH + (this.currentData.cols - 1) * GAP;
+    const height = this.currentData.rows * CELL_HEIGHT + (this.currentData.rows - 1) * GAP;
+    return { width, height };
+  }
+
   /**
    * Инициализирует ArrowRenderer
    */
@@ -161,12 +204,232 @@ export class VisualEditor {
       return;
     }
 
-    // Вычисляем размеры на основе данных сетки (как в GridRenderer)
-    const gridWidth = this.currentData.cols * CELL_WIDTH + (this.currentData.cols - 1) * GAP;
-    const gridHeight = this.currentData.rows * CELL_HEIGHT + (this.currentData.rows - 1) * GAP;
+    const { width: gridWidth, height: gridHeight } = this.getGridDimensions();
 
     this.arrowRenderer = new ArrowRenderer(svg as SVGSVGElement, this.colors, false);
     this.arrowRenderer.setSize(gridWidth, gridHeight);
+  }
+
+  private clampZoom(value: number): number {
+    if (Number.isNaN(value) || !Number.isFinite(value)) {
+      return 1;
+    }
+    return Math.min(VisualEditor.ZOOM_MAX, Math.max(VisualEditor.ZOOM_MIN, value));
+  }
+
+  private computeFitZoom(viewport: HTMLElement, gridWidth: number, gridHeight: number): number {
+    const availableWidth = Math.max(
+      viewport.clientWidth - VisualEditor.VIEWPORT_PADDING,
+      100
+    );
+    const availableHeight = Math.max(
+      viewport.clientHeight - VisualEditor.VIEWPORT_PADDING,
+      100
+    );
+
+    if (gridWidth === 0 || gridHeight === 0) {
+      return 1;
+    }
+
+    const widthScale = availableWidth / gridWidth;
+    const heightScale = availableHeight / gridHeight;
+
+    let scale: number;
+
+    if (widthScale < 1) {
+      // ширина ограничивает: масштабируемся только по ширине, высота может скроллиться
+      scale = widthScale;
+      scale = Math.min(scale, heightScale);
+    } else {
+      // по ширине помещается — используем максимум, но не выше предела зума
+      scale = Math.min(widthScale, VisualEditor.ZOOM_MAX);
+    }
+
+    if (scale < VisualEditor.MIN_FIT_ZOOM && widthScale >= VisualEditor.MIN_FIT_ZOOM) {
+      scale = VisualEditor.MIN_FIT_ZOOM;
+    }
+
+    scale = Math.min(scale, VisualEditor.ZOOM_MAX);
+    return this.clampZoom(scale);
+  }
+
+  private applyZoom(zoom: number): void {
+    const scaleContainer = this.targetDoc.getElementById('cb-visual-grid-scale') as HTMLElement | null;
+    const canvas = this.targetDoc.getElementById('cb-visual-grid-canvas') as HTMLElement | null;
+    const headersContainer = this.targetDoc.getElementById('cb-visual-column-headers') as HTMLElement | null;
+    if (!scaleContainer || !canvas) return;
+
+    this.currentZoom = this.clampZoom(zoom);
+    if (!this.gridPixelWidth || !this.gridPixelHeight) {
+      const { width, height } = this.getGridDimensions();
+      this.gridPixelWidth = width;
+      this.gridPixelHeight = height;
+    }
+    scaleContainer.style.transform = `scale(${this.currentZoom})`;
+    scaleContainer.style.transformOrigin = 'top left';
+    scaleContainer.dataset.zoom = this.currentZoom.toFixed(3);
+
+    const container = this.targetDoc.getElementById('cb-visual-grid-container') as HTMLElement | null;
+    if (container) {
+      container.style.width = `${this.gridPixelWidth * this.currentZoom}px`;
+      container.style.height = `${this.gridPixelHeight * this.currentZoom}px`;
+    }
+    if (headersContainer) {
+      headersContainer.style.width = `${this.gridPixelWidth}px`;
+    }
+
+    this.updateZoomDisplay();
+  }
+
+  private updateZoomDisplay(): void {
+    const zoomValue = this.targetDoc.getElementById('cb-visual-zoom-value');
+    if (zoomValue) {
+      zoomValue.textContent = `${Math.round(this.currentZoom * 100)}%`;
+    }
+
+    const fitBtn = this.targetDoc.getElementById('cb-visual-zoom-fit');
+    if (fitBtn) {
+      fitBtn.classList.toggle('cardbord-btn-active', this.isAutoZoom);
+    }
+
+    const zoomOutBtn = this.targetDoc.getElementById('cb-visual-zoom-out') as HTMLButtonElement | null;
+    const zoomInBtn = this.targetDoc.getElementById('cb-visual-zoom-in') as HTMLButtonElement | null;
+
+    if (zoomOutBtn) {
+      zoomOutBtn.disabled = this.currentZoom <= VisualEditor.ZOOM_MIN + 0.01;
+    }
+    if (zoomInBtn) {
+      zoomInBtn.disabled = this.currentZoom >= VisualEditor.ZOOM_MAX - 0.01;
+    }
+  }
+
+  private refreshWorkspaceLayout(forceFit: boolean = false): void {
+    const scaleContainer = this.targetDoc.getElementById('cb-visual-grid-scale') as HTMLElement | null;
+    const wrapper = this.targetDoc.getElementById('cb-visual-grid-wrapper') as HTMLElement | null;
+    const canvas = this.targetDoc.getElementById('cb-visual-grid-canvas') as HTMLElement | null;
+    const headersContainer = this.targetDoc.getElementById('cb-visual-column-headers') as HTMLElement | null;
+    const viewport = this.targetDoc.getElementById('cb-visual-workspace-viewport') as HTMLElement | null;
+    if (!scaleContainer || !wrapper || !canvas || !viewport) return;
+
+    const { width, height } = this.getGridDimensions();
+    this.gridPixelWidth = width;
+    this.gridPixelHeight = height;
+    scaleContainer.style.width = `${width}px`;
+    wrapper.style.width = `${width}px`;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    if (headersContainer) {
+      headersContainer.style.width = `${width}px`;
+    }
+    const container = this.targetDoc.getElementById('cb-visual-grid-container') as HTMLElement | null;
+    if (container) {
+      container.style.width = `${width * this.currentZoom}px`;
+      container.style.height = `${height * this.currentZoom}px`;
+    }
+
+    this.fitZoom = this.computeFitZoom(viewport, width, height);
+    if (forceFit) {
+      this.isAutoZoom = true;
+    }
+
+    if (this.isAutoZoom) {
+      this.applyZoom(this.fitZoom);
+    } else {
+      this.applyZoom(this.currentZoom);
+    }
+  }
+
+  private scheduleLayoutRefresh(forceFit: boolean = false): void {
+    const win = this.targetDoc.defaultView;
+    if (!win) {
+      this.refreshWorkspaceLayout(forceFit);
+      return;
+    }
+
+    if (this.pendingLayoutRefresh !== null) {
+      win.cancelAnimationFrame(this.pendingLayoutRefresh);
+    }
+
+    this.pendingLayoutRefresh = win.requestAnimationFrame(() => {
+      this.pendingLayoutRefresh = null;
+      this.refreshWorkspaceLayout(forceFit);
+    });
+  }
+
+  private initViewportObserver(): void {
+    const viewport = this.targetDoc.getElementById('cb-visual-workspace-viewport') as HTMLElement | null;
+    if (!viewport || typeof ResizeObserver === 'undefined') return;
+
+    this.viewportObserver?.disconnect();
+    this.viewportObserver = new ResizeObserver(() => {
+      this.scheduleLayoutRefresh(this.isAutoZoom);
+    });
+    this.viewportObserver.observe(viewport);
+  }
+
+  private disposeViewportObserver(): void {
+    if (this.viewportObserver) {
+      this.viewportObserver.disconnect();
+      this.viewportObserver = null;
+    }
+
+    const win = this.targetDoc.defaultView;
+    if (win && this.pendingLayoutRefresh !== null) {
+      win.cancelAnimationFrame(this.pendingLayoutRefresh);
+      this.pendingLayoutRefresh = null;
+    }
+  }
+
+  private adjustZoom(delta: number): void {
+    this.isAutoZoom = false;
+    const nextZoom = this.clampZoom(this.currentZoom + delta);
+    this.applyZoom(nextZoom);
+  }
+
+  private applyFitZoom(): void {
+    this.isAutoZoom = true;
+    this.scheduleLayoutRefresh(true);
+  }
+
+  private clientToGridCoordinates(event: MouseEvent): Point {
+    const wrapper = this.targetDoc.getElementById('cb-visual-grid-wrapper');
+    if (!wrapper) {
+      return { x: event.clientX, y: event.clientY };
+    }
+    const rect = wrapper.getBoundingClientRect();
+    const scale = this.currentZoom || 1;
+    return {
+      x: (event.clientX - rect.left) / scale,
+      y: (event.clientY - rect.top) / scale
+    };
+  }
+
+  private focusHeaderInput(colIndex: number): void {
+    if (!this.currentData.columnHeaders) return;
+
+    const panel = this.targetDoc.getElementById('cb-visual-headers-panel');
+    if (panel) {
+      panel.classList.remove('cardbord-panel-hidden');
+    }
+
+    const toggleBtn = this.targetDoc.getElementById('cb-visual-toggle-headers');
+    if (toggleBtn) {
+      toggleBtn.textContent = '✓ Заголовки';
+    }
+
+    // Убеждаемся, что поля обновлены перед фокусом
+    this.renderHeadersInputs();
+
+    const inputsContainer = this.targetDoc.getElementById('cb-visual-headers-inputs');
+    const input = inputsContainer?.querySelector<HTMLInputElement>(`input[data-col-index="${colIndex}"]`);
+    if (input) {
+      input.focus();
+      input.select();
+    }
+
+    if (panel) {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   }
 
   /**
@@ -186,6 +449,7 @@ export class VisualEditor {
       this.currentData.cards,
       (arrow) => this.showArrowEditor(arrow)
     );
+    this.scheduleLayoutRefresh(this.isAutoZoom);
   }
 
   /**
@@ -195,9 +459,40 @@ export class VisualEditor {
     const editor = this.targetDoc.getElementById('cb-visual-grid-editor');
     if (!editor) return;
 
+    const { width: baseGridWidth } = this.getGridDimensions();
+
     editor.style.gridTemplateColumns = `repeat(${this.currentData.cols}, ${CELL_WIDTH}px)`;
     editor.style.gridTemplateRows = `repeat(${this.currentData.rows}, ${CELL_HEIGHT}px)`;
     editor.innerHTML = '';
+
+    const floatingHeaders = this.targetDoc.getElementById('cb-visual-column-headers') as HTMLElement | null;
+    if (floatingHeaders) {
+      if (this.currentData.columnHeaders) {
+        floatingHeaders.classList.remove('cardbord-grid-floating-headers-hidden');
+        floatingHeaders.classList.add('cardbord-grid-floating-headers-active');
+
+        floatingHeaders.innerHTML = '';
+        floatingHeaders.style.gridTemplateColumns = `repeat(${this.currentData.cols}, ${CELL_WIDTH}px)`;
+        floatingHeaders.style.columnGap = `${GAP}px`;
+        const unscaledWidth = this.gridPixelWidth || baseGridWidth;
+        floatingHeaders.style.width = `${unscaledWidth}px`;
+
+        for (let c = 0; c < this.currentData.cols; c++) {
+          const headerValue = this.currentData.columnHeaders[c] ?? '';
+          const headerCell = this.targetDoc.createElement('div');
+          headerCell.className = 'cardbord-editor-column-header';
+          headerCell.title = headerValue || `Колонка ${c + 1}`;
+          headerCell.textContent = headerValue.trim() || `Колонка ${c + 1}`;
+          headerCell.dataset.colIndex = c.toString();
+          headerCell.addEventListener('click', () => this.focusHeaderInput(c));
+          floatingHeaders.appendChild(headerCell);
+        }
+      } else {
+        floatingHeaders.innerHTML = '';
+        floatingHeaders.classList.add('cardbord-grid-floating-headers-hidden');
+        floatingHeaders.classList.remove('cardbord-grid-floating-headers-active');
+      }
+    }
 
     for (let r = 0; r < this.currentData.rows; r++) {
       for (let c = 0; c < this.currentData.cols; c++) {
@@ -211,6 +506,8 @@ export class VisualEditor {
     setTimeout(() => {
       applyEditorTextScaling(editor);
     }, 50);
+
+    this.scheduleLayoutRefresh(this.isAutoZoom);
   }
 
   /**
@@ -365,8 +662,9 @@ export class VisualEditor {
 
     // Получаем координаты мыши относительно SVG
     const svgRect = svg.getBoundingClientRect();
-    const mouseX = e.clientX - svgRect.left;
-    const mouseY = e.clientY - svgRect.top;
+    const scale = this.currentZoom || 1;
+    const mouseX = (e.clientX - svgRect.left) / scale;
+    const mouseY = (e.clientY - svgRect.top) / scale;
 
     // Убираем класс magnetic со всех anchor points
     this.targetDoc.querySelectorAll('.cardbord-anchor-magnetic').forEach((el) => {
@@ -591,10 +889,8 @@ export class VisualEditor {
           this.state.arrowStartCard &&
           this.state.arrowStartCard.id !== card.id
         ) {
-          const nearestSide = getNearestSide(
-            { x: e.clientX, y: e.clientY },
-            card
-          );
+          const point = this.clientToGridCoordinates(e);
+          const nearestSide = getNearestSide(point, card, false);
           this.endArrowCreation(card, nearestSide);
         }
       });
@@ -747,6 +1043,7 @@ export class VisualEditor {
       this.initializeArrowRenderer();
       this.renderArrows();
       this.renderHeadersInputs();
+      this.scheduleLayoutRefresh(true);
     });
 
     // Toggle заголовков колонок
@@ -789,6 +1086,15 @@ export class VisualEditor {
     // Отмена
     const cancelBtn = this.targetDoc.getElementById('cb-visual-cancel');
     cancelBtn?.addEventListener('click', () => this.hide());
+
+    const zoomInBtn = this.targetDoc.getElementById('cb-visual-zoom-in');
+    zoomInBtn?.addEventListener('click', () => this.adjustZoom(VisualEditor.ZOOM_STEP));
+
+    const zoomOutBtn = this.targetDoc.getElementById('cb-visual-zoom-out');
+    zoomOutBtn?.addEventListener('click', () => this.adjustZoom(-VisualEditor.ZOOM_STEP));
+
+    const fitBtn = this.targetDoc.getElementById('cb-visual-zoom-fit');
+    fitBtn?.addEventListener('click', () => this.applyFitZoom());
   }
 
   /**
@@ -934,6 +1240,7 @@ export class VisualEditor {
 
     this.renderHeadersInputs();
     this.renderGridEditor();
+    this.scheduleLayoutRefresh(this.isAutoZoom);
   }
 
   /**
@@ -941,12 +1248,18 @@ export class VisualEditor {
    */
   private renderHeadersInputs(): void {
     const container = this.targetDoc.getElementById('cb-visual-headers-inputs');
-    if (!container || !this.currentData.columnHeaders) return;
+    if (!container) return;
 
     container.innerHTML = '';
+    if (!this.currentData.columnHeaders) {
+      container.style.display = 'none';
+      return;
+    }
+
     container.style.display = 'grid';
-    container.style.gridTemplateColumns = `repeat(${this.currentData.cols}, 1fr)`;
-    container.style.gap = '8px';
+    container.style.gridTemplateColumns = `repeat(auto-fit, minmax(160px, 1fr))`;
+    container.style.gap = '12px';
+    container.style.alignItems = 'stretch';
 
     for (let i = 0; i < this.currentData.cols; i++) {
       const input = this.targetDoc.createElement('input');

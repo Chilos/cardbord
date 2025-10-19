@@ -213,7 +213,22 @@ export class CardbordPlugin {
             return;
           }
 
-          // SVG уже имеет правильные размеры из GridRenderer
+          const wrapper = container.querySelector('.cardbord-grid-wrapper') as HTMLElement | null;
+          const gridElement = container.querySelector('.cardbord-grid') as HTMLElement | null;
+
+          if (wrapper && gridElement) {
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const gridRect = gridElement.getBoundingClientRect();
+
+            const topOffset = gridRect.top - wrapperRect.top;
+            const leftOffset = gridRect.left - wrapperRect.left;
+
+            svg.style.top = `${topOffset}px`;
+            svg.style.left = `${leftOffset}px`;
+            svg.setAttribute('width', `${gridRect.width}`);
+            svg.setAttribute('height', `${gridRect.height}`);
+          }
+
           console.debug('[Cardbord][Arrow] Rendering arrows for slot:', slot, 'arrows:', data.arrows.length);
           const renderer = new ArrowRenderer(svg, this.colors, false);
           renderer.renderArrows(data.arrows, data.cards);

@@ -2,7 +2,7 @@
   "name": "logseq-plugin-cardbord",
   "author": "Cardbord Team",
   "description": "Создание интерактивных сеток с карточками",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "main": "dist/index.js",
   "id": "logseq-plugin-cardbord",
   "title": "Cardbord",
