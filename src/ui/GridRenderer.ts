@@ -38,8 +38,27 @@ export class GridRenderer {
         const card = data.cards.find(card => card.row === r && card.col === c);
 
         if (card) {
+          const stickers = Array.isArray(card.stickers) ? card.stickers : [];
+          if (stickers.length) {
+            console.debug('[Cardbord][Sticker] Rendering read-only card with stickers', {
+              cardId: card.id,
+              stickers
+            });
+          }
+          const cellClasses = ['cardbord-cell'];
+          if (stickers.length) cellClasses.push('cardbord-cell--with-sticker');
+          const stickersHtml = stickers
+            .map(sticker => {
+              const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(sticker.text.trim());
+              const classes = ['cardbord-card-sticker', `cardbord-card-sticker--${sticker.corner}`];
+              if (isEmojiOnly) classes.push('cardbord-card-sticker--emoji');
+              return `<span class="${classes.join(' ')}" data-corner="${sticker.corner}" style="--cb-sticker-accent: ${sticker.color ?? card.color};">${this.escapeHtml(sticker.text)}</span>`;
+            })
+            .join('');
+          const cardStyle = `background: ${card.color};`;
+
           // Ячейка с карточкой (рендерим markdown с контейнером для текста)
-          cellsHtml += `<div class="cardbord-cell" data-row="${r}" data-col="${c}"><div class="cardbord-card" style="background: ${card.color};"><div class="cardbord-card-text">${renderMarkdown(card.text)}</div></div></div>`;
+          cellsHtml += `<div class="${cellClasses.join(' ')}" data-row="${r}" data-col="${c}"><div class="cardbord-card" style="${cardStyle}">${stickersHtml}<div class="cardbord-card-text">${renderMarkdown(card.text)}</div></div></div>`;
         } else {
           // Пустая ячейка
           cellsHtml += `<div class="cardbord-cell" data-row="${r}" data-col="${c}"><span class="cardbord-cell-empty"></span></div>`;
@@ -59,7 +78,7 @@ export class GridRenderer {
     // Вычисляем offset для SVG с учетом заголовков
     const headerOffset = (data.columnHeaders && data.columnHeaders.some(h => h)) ? 71 : 21;
 
-    return `<div class="cardbord-container" data-slot-id="${slotKey ?? ''}"><div class="cardbord-grid-wrapper" style="position: relative; padding: ${PADDING}px;">${editBtn}${headersHtml}<svg class="cardbord-arrows" style="position:absolute; top:${headerOffset}px; left:21; width:${gridWidth}px; height:${gridHeight}px; pointer-events:none; z-index:1;"></svg><div class="cardbord-grid" style="${gridStyle}">${cellsHtml}</div></div></div>`;
+    return `<div class="cardbord-container" data-slot-id="${slotKey ?? ''}"><div class="cardbord-grid-wrapper" style="position: relative; padding: ${PADDING}px;">${editBtn}${headersHtml}<svg class="cardbord-arrows" style="position:absolute; top:${headerOffset}px; left:21; width:${gridWidth}px; height:${gridHeight}px; pointer-events:none; z-index: var(--cb-z-floating, 20);"></svg><div class="cardbord-grid" style="${gridStyle}">${cellsHtml}</div></div></div>`;
   }
   
   /**

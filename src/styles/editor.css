@@ -9,7 +9,7 @@
   inset: 0;
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(4px);
-  z-index: 10000;
+  z-index: var(--cb-z-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -27,7 +27,7 @@
   width: 1200px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
   animation: cardbord-scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -170,7 +170,7 @@
   top: 0;
   left: 0;
   pointer-events: none;
-  z-index: 3;
+  z-index: var(--cb-z-floating);
 }
 
 .cardbord-editor-arrows-svg path {
@@ -185,7 +185,7 @@
   display: grid;
   gap: 10px;
   position: relative;
-  z-index: 2;
+  z-index: var(--cb-z-base);
   margin-bottom: 20px;
 }
 
@@ -277,6 +277,19 @@
   overflow-wrap: break-word;
 }
 
+.cardbord-editor-cell:hover {
+  z-index: var(--cb-z-elevated);
+}
+
+.cardbord-editor-cell--with-sticker {
+  z-index: var(--cb-z-elevated);
+}
+
+.cardbord-editor-cell--with-sticker:hover,
+.cardbord-editor-cell--with-sticker.cardbord-editor-cell-dragover {
+  z-index: var(--cb-z-floating);
+}
+
 .cardbord-editor-cell .cardbord-card-text {
   width: 100%;
   height: 100%;
@@ -354,15 +367,77 @@
 }
 
 .cardbord-editor-cell-card {
+  position: relative;
+  z-index: var(--cb-z-elevated);
   cursor: move;
   font-weight: 500;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   color: #1a1a1a;
 }
 
+.cardbord-editor-cell .cardbord-card-sticker {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  max-width: 120px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #0e1f1f;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    var(--cb-sticker-accent, var(--ls-active-primary-color, #4ECDC4)) 100%
+  );
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  z-index: var(--cb-z-floating);
+  transform-origin: center;
+  white-space: nowrap;
+}
+
+.cardbord-editor-cell .cardbord-card-sticker--top-left {
+  top: -12px;
+  left: -10px;
+  transform: rotate(-6deg);
+}
+
+.cardbord-editor-cell .cardbord-card-sticker--top-right {
+  top: -12px;
+  right: -10px;
+  transform: rotate(5deg);
+}
+
+.cardbord-editor-cell .cardbord-card-sticker--bottom-right {
+  bottom: -12px;
+  right: -10px;
+  transform: rotate(-4deg);
+}
+
+.cardbord-editor-cell .cardbord-card-sticker--bottom-left {
+  bottom: -12px;
+  left: -10px;
+  transform: rotate(6deg);
+}
+
+.cardbord-editor-cell .cardbord-card-sticker--emoji {
+  font-size: 22px;
+  padding: 6px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  transform: scale(1.4) translateZ(0) rotate(4deg);
+  letter-spacing: 0;
+}
+
 .cardbord-editor-cell-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: var(--cb-z-floating);
 }
 
 .cardbord-editor-cell-empty {
@@ -403,7 +478,7 @@
   opacity: 0;
   transform: scale(0);
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  z-index: 10;
+  z-index: var(--cb-z-dropdown);
   pointer-events: none;
 }
 
@@ -602,6 +677,106 @@
 /* Color Section */
 .cardbord-color-section {
   margin-bottom: 16px;
+}
+
+.cardbord-sticker-section {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cardbord-sticker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cardbord-link-btn {
+  background: transparent;
+  border: none;
+  color: var(--ls-active-primary-color, #4ECDC4);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.cardbord-link-btn:hover {
+  text-decoration: underline;
+}
+
+.cardbord-sticker-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 2px solid var(--ls-border-color, #ddd);
+  border-radius: 6px;
+  background: var(--ls-primary-background-color, #fff);
+  color: var(--ls-primary-text-color, #111);
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cardbord-sticker-input:focus {
+  outline: none;
+  border-color: var(--ls-active-primary-color, #4ECDC4);
+  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.12);
+}
+
+.cardbord-sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cardbord-sticker-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cardbord-sticker-control-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ls-secondary-text-color, #555);
+}
+
+.cardbord-sticker-icon {
+  font-size: 14px;
+}
+
+.cardbord-sticker-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardbord-sticker-clear {
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--ls-secondary-text-color, #666);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cardbord-sticker-clear:hover {
+  background: rgba(78, 205, 196, 0.15);
+  color: var(--ls-active-primary-color, #4ECDC4);
+}
+
+.cardbord-sticker-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ls-secondary-text-color, #666);
 }
 
 .cardbord-color-section .cardbord-control-label {
