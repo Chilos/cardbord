@@ -4,10 +4,20 @@ import { RENDERER_TYPE } from '../utils/constants';
 
 export class GridDataManager {
   async save(uuid: string, data: GridData): Promise<void> {
-    const encoded = encodeGridData(data);
-    const content = `{{renderer ${RENDERER_TYPE}, ${encoded}}}`;
     const block = await logseq.Editor.getBlock(uuid);
     if (!block) throw new Error('Block not found');
+
+    const encoded = encodeGridData(data);
+    const newMacro = `{{renderer ${RENDERER_TYPE}, ${encoded}}}`;
+    const macroRegex = /\{\{renderer\s+:?cardbord\s*,\s*[^}]*\}\}/i;
+    const existingContent = block.content ?? '';
+
+    const content = macroRegex.test(existingContent)
+      ? existingContent.replace(macroRegex, newMacro)
+      : existingContent.trim()
+        ? `${existingContent}\n${newMacro}`
+        : newMacro;
+
     await logseq.Editor.updateBlock(uuid, content);
   }
 

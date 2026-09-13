@@ -3,50 +3,40 @@
  * Поддерживает drag-and-drop, создание стрелок через anchor points, редактирование
  */
 
-import type { GridData, Card, Arrow, AnchorSide, EditorState, Point, StickerCorner, CardSticker } from '../types';
+import type { GridData, Card, Arrow, AnchorSide, EditorState } from '../types';
 import { ArrowRenderer } from './ArrowRenderer';
 import { CELL_WIDTH, CELL_HEIGHT, GAP } from '../utils/constants';
-import { encodeGridData } from '../utils/encoding';
-import { RENDERER_TYPE } from '../utils/constants';
-import { getNearestSide, getAnchorPoint } from '../utils/geometry';
+import { getNearestSide } from '../utils/geometry';
 import { renderMarkdown } from '../utils/markdown';
 import { applyEditorTextScaling } from '../utils/textScaling';
+import { GridDataManager } from '../storage/GridDataManager';
+import { CanvasViewportController } from './editor/CanvasViewportController';
+import { StickerController } from './editor/StickerController';
+import { CardDragController } from './editor/CardDragController';
+import { ArrowCreationController } from './editor/ArrowCreationController';
 
 export class VisualEditor {
-  private static MODAL_ID = 'cardbord-visual-editor';
-  private static readonly STICKER_CORNERS: StickerCorner[] = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
-  private static readonly STICKER_CONTROL_META: Array<{ corner: StickerCorner; icon: string; label: string }> = [
-    { corner: 'top-left', icon: '↖', label: 'Верхний левый' },
-    { corner: 'top-right', icon: '↗', label: 'Верхний правый' },
-    { corner: 'bottom-right', icon: '↘', label: 'Нижний правый' },
-    { corner: 'bottom-left', icon: '↙', label: 'Нижний левый' }
-  ];
+  private static readonly MODAL_ID = 'cardbord-visual-editor';
   private currentData: GridData;
   private blockUuid: string;
   private colors: string[];
   private state: EditorState;
   private targetDoc: Document;
   private arrowRenderer: ArrowRenderer | null = null;
-  private currentZoom = 1;
-  private fitZoom = 1;
-  private isAutoZoom = true;
-  private viewportObserver: ResizeObserver | null = null;
-  private pendingLayoutRefresh: number | null = null;
-  private gridPixelWidth = 0;
-  private gridPixelHeight = 0;
-  private stickerDrafts: Partial<Record<StickerCorner, string>> = {};
 
-  private static readonly ZOOM_MIN = 0.45;
-  private static readonly ZOOM_MAX = 1.6;
-  private static readonly ZOOM_STEP = 0.1;
-  private static readonly VIEWPORT_PADDING = 48;
-  private static readonly MIN_FIT_ZOOM = 0.65;
+  private viewportController: CanvasViewportController;
+  private stickerController: StickerController;
+  private dragController: CardDragController;
+  private arrowCreationController: ArrowCreationController;
+  private gridDataManager: GridDataManager;
 
   constructor(colors: string[]) {
     this.colors = colors;
     this.currentData = { rows: 2, cols: 2, cards: [], arrows: [] };
     this.blockUuid = '';
     this.targetDoc = ((parent as any).document) || document;
+    this.gridDataManager = new GridDataManager();
+
     this.state = {
       selectedCell: null,
       selectedCard: null,
@@ -57,6 +47,33 @@ export class VisualEditor {
       draggedCard: null,
       isDragging: false
     };
+
+    this.viewportController = new CanvasViewportController({
+      getTargetDoc: () => this.targetDoc,
+      getGridDimensions: () => this.getGridDimensions()
+    });
+
+    this.stickerController = new StickerController();
+
+    this.dragController = new CardDragController({
+      getTargetDoc: () => this.targetDoc,
+      onCardMoved: (card, targetRow, targetCol) => {
+        this.dragController.moveCard(this.currentData.cards, card, targetRow, targetCol);
+        this.renderGridEditor();
+        this.renderArrows();
+      }
+    });
+
+    this.arrowCreationController = new ArrowCreationController({
+      getTargetDoc: () => this.targetDoc,
+      getCurrentCards: () => this.currentData.cards,
+      getCurrentZoom: () => this.viewportController.getZoom(),
+      getColor: () => this.colors[0] ?? '#6366f1',
+      onArrowCreated: (arrow) => {
+        this.currentData.arrows.push(arrow);
+        this.renderArrows();
+      }
+    });
   }
 
   /**
@@ -65,11 +82,8 @@ export class VisualEditor {
   show(data: GridData, blockUuid: string): void {
     this.currentData = JSON.parse(JSON.stringify(data));
     this.blockUuid = blockUuid;
-    this.currentZoom = 1;
-    this.fitZoom = 1;
-    this.isAutoZoom = true;
-    this.stickerDrafts = {};
-    this.disposeViewportObserver();
+    this.viewportController.reset();
+    this.stickerController.reset();
 
     // Удаляем существующую модалку если есть
     const existing = this.targetDoc.getElementById(VisualEditor.MODAL_ID);
@@ -82,9 +96,9 @@ export class VisualEditor {
     this.renderGridEditor();
     this.initializeArrowRenderer();
     this.renderArrows();
-    this.renderHeadersInputs(); // Рендерим поля заголовков если они есть
-    this.refreshWorkspaceLayout(true);
-    this.initViewportObserver();
+    this.renderHeadersInputs();
+    this.viewportController.refreshWorkspaceLayout(true);
+    this.viewportController.initObserver();
   }
 
   /**
@@ -93,33 +107,15 @@ export class VisualEditor {
   hide(): void {
     const modal = this.targetDoc.getElementById(VisualEditor.MODAL_ID);
     if (modal) modal.remove();
-    this.disposeViewportObserver();
-    this.stickerDrafts = {};
+    this.viewportController.disposeObserver();
+    this.stickerController.reset();
   }
 
   /**
    * Генерирует HTML модального окна
    */
   private renderModal(): string {
-    const stickerControlsMarkup = VisualEditor.STICKER_CONTROL_META.map(({ corner, icon, label }) => `
-      <div class="cardbord-sticker-control">
-        <label class="cardbord-sticker-control-label" for="cb-visual-sticker-${corner}">
-          <span class="cardbord-sticker-icon">${icon}</span>
-          ${label}
-        </label>
-        <div class="cardbord-sticker-input-row">
-          <input
-            id="cb-visual-sticker-${corner}"
-            class="cardbord-sticker-input"
-            type="text"
-            data-corner="${corner}"
-            maxlength="16"
-            placeholder="Подпись"
-          />
-          <button type="button" class="cardbord-sticker-clear" data-corner="${corner}" title="Очистить">✕</button>
-        </div>
-      </div>
-    `).join('');
+    const stickerControlsMarkup = this.stickerController.renderControlsMarkup();
 
     return `
       <div id="${VisualEditor.MODAL_ID}" class="cardbord-visual-editor-overlay">
@@ -245,203 +241,8 @@ export class VisualEditor {
     }
 
     const { width: gridWidth, height: gridHeight } = this.getGridDimensions();
-
-    this.arrowRenderer = new ArrowRenderer(svg as SVGSVGElement, this.colors, false);
+    this.arrowRenderer = new ArrowRenderer(svg as unknown as SVGSVGElement, this.colors, false);
     this.arrowRenderer.setSize(gridWidth, gridHeight);
-  }
-
-  private clampZoom(value: number): number {
-    if (Number.isNaN(value) || !Number.isFinite(value)) {
-      return 1;
-    }
-    return Math.min(VisualEditor.ZOOM_MAX, Math.max(VisualEditor.ZOOM_MIN, value));
-  }
-
-  private computeFitZoom(viewport: HTMLElement, gridWidth: number, gridHeight: number): number {
-    const availableWidth = Math.max(
-      viewport.clientWidth - VisualEditor.VIEWPORT_PADDING,
-      100
-    );
-    const availableHeight = Math.max(
-      viewport.clientHeight - VisualEditor.VIEWPORT_PADDING,
-      100
-    );
-
-    if (gridWidth === 0 || gridHeight === 0) {
-      return 1;
-    }
-
-    const widthScale = availableWidth / gridWidth;
-    const heightScale = availableHeight / gridHeight;
-
-    let scale: number;
-
-    if (widthScale < 1) {
-      // ширина ограничивает: масштабируемся только по ширине, высота может скроллиться
-      scale = widthScale;
-      scale = Math.min(scale, heightScale);
-    } else {
-      // по ширине помещается — используем максимум, но не выше предела зума
-      scale = Math.min(widthScale, VisualEditor.ZOOM_MAX);
-    }
-
-    if (scale < VisualEditor.MIN_FIT_ZOOM && widthScale >= VisualEditor.MIN_FIT_ZOOM) {
-      scale = VisualEditor.MIN_FIT_ZOOM;
-    }
-
-    scale = Math.min(scale, VisualEditor.ZOOM_MAX);
-    return this.clampZoom(scale);
-  }
-
-  private applyZoom(zoom: number): void {
-    const scaleContainer = this.targetDoc.getElementById('cb-visual-grid-scale') as HTMLElement | null;
-    const canvas = this.targetDoc.getElementById('cb-visual-grid-canvas') as HTMLElement | null;
-    const headersContainer = this.targetDoc.getElementById('cb-visual-column-headers') as HTMLElement | null;
-    if (!scaleContainer || !canvas) return;
-
-    this.currentZoom = this.clampZoom(zoom);
-    if (!this.gridPixelWidth || !this.gridPixelHeight) {
-      const { width, height } = this.getGridDimensions();
-      this.gridPixelWidth = width;
-      this.gridPixelHeight = height;
-    }
-    scaleContainer.style.transform = `scale(${this.currentZoom})`;
-    scaleContainer.style.transformOrigin = 'top left';
-    scaleContainer.dataset.zoom = this.currentZoom.toFixed(3);
-
-    const container = this.targetDoc.getElementById('cb-visual-grid-container') as HTMLElement | null;
-    if (container) {
-      container.style.width = `${this.gridPixelWidth * this.currentZoom}px`;
-      container.style.height = `${this.gridPixelHeight * this.currentZoom}px`;
-    }
-    if (headersContainer) {
-      headersContainer.style.width = `${this.gridPixelWidth}px`;
-    }
-
-    this.updateZoomDisplay();
-  }
-
-  private updateZoomDisplay(): void {
-    const zoomValue = this.targetDoc.getElementById('cb-visual-zoom-value');
-    if (zoomValue) {
-      zoomValue.textContent = `${Math.round(this.currentZoom * 100)}%`;
-    }
-
-    const fitBtn = this.targetDoc.getElementById('cb-visual-zoom-fit');
-    if (fitBtn) {
-      fitBtn.classList.toggle('cardbord-btn-active', this.isAutoZoom);
-    }
-
-    const zoomOutBtn = this.targetDoc.getElementById('cb-visual-zoom-out') as HTMLButtonElement | null;
-    const zoomInBtn = this.targetDoc.getElementById('cb-visual-zoom-in') as HTMLButtonElement | null;
-
-    if (zoomOutBtn) {
-      zoomOutBtn.disabled = this.currentZoom <= VisualEditor.ZOOM_MIN + 0.01;
-    }
-    if (zoomInBtn) {
-      zoomInBtn.disabled = this.currentZoom >= VisualEditor.ZOOM_MAX - 0.01;
-    }
-  }
-
-  private refreshWorkspaceLayout(forceFit: boolean = false): void {
-    const scaleContainer = this.targetDoc.getElementById('cb-visual-grid-scale') as HTMLElement | null;
-    const wrapper = this.targetDoc.getElementById('cb-visual-grid-wrapper') as HTMLElement | null;
-    const canvas = this.targetDoc.getElementById('cb-visual-grid-canvas') as HTMLElement | null;
-    const headersContainer = this.targetDoc.getElementById('cb-visual-column-headers') as HTMLElement | null;
-    const viewport = this.targetDoc.getElementById('cb-visual-workspace-viewport') as HTMLElement | null;
-    if (!scaleContainer || !wrapper || !canvas || !viewport) return;
-
-    const { width, height } = this.getGridDimensions();
-    this.gridPixelWidth = width;
-    this.gridPixelHeight = height;
-    scaleContainer.style.width = `${width}px`;
-    wrapper.style.width = `${width}px`;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    if (headersContainer) {
-      headersContainer.style.width = `${width}px`;
-    }
-    const container = this.targetDoc.getElementById('cb-visual-grid-container') as HTMLElement | null;
-    if (container) {
-      container.style.width = `${width * this.currentZoom}px`;
-      container.style.height = `${height * this.currentZoom}px`;
-    }
-
-    this.fitZoom = this.computeFitZoom(viewport, width, height);
-    if (forceFit) {
-      this.isAutoZoom = true;
-    }
-
-    if (this.isAutoZoom) {
-      this.applyZoom(this.fitZoom);
-    } else {
-      this.applyZoom(this.currentZoom);
-    }
-  }
-
-  private scheduleLayoutRefresh(forceFit: boolean = false): void {
-    const win = this.targetDoc.defaultView;
-    if (!win) {
-      this.refreshWorkspaceLayout(forceFit);
-      return;
-    }
-
-    if (this.pendingLayoutRefresh !== null) {
-      win.cancelAnimationFrame(this.pendingLayoutRefresh);
-    }
-
-    this.pendingLayoutRefresh = win.requestAnimationFrame(() => {
-      this.pendingLayoutRefresh = null;
-      this.refreshWorkspaceLayout(forceFit);
-    });
-  }
-
-  private initViewportObserver(): void {
-    const viewport = this.targetDoc.getElementById('cb-visual-workspace-viewport') as HTMLElement | null;
-    if (!viewport || typeof ResizeObserver === 'undefined') return;
-
-    this.viewportObserver?.disconnect();
-    this.viewportObserver = new ResizeObserver(() => {
-      this.scheduleLayoutRefresh(this.isAutoZoom);
-    });
-    this.viewportObserver.observe(viewport);
-  }
-
-  private disposeViewportObserver(): void {
-    if (this.viewportObserver) {
-      this.viewportObserver.disconnect();
-      this.viewportObserver = null;
-    }
-
-    const win = this.targetDoc.defaultView;
-    if (win && this.pendingLayoutRefresh !== null) {
-      win.cancelAnimationFrame(this.pendingLayoutRefresh);
-      this.pendingLayoutRefresh = null;
-    }
-  }
-
-  private adjustZoom(delta: number): void {
-    this.isAutoZoom = false;
-    const nextZoom = this.clampZoom(this.currentZoom + delta);
-    this.applyZoom(nextZoom);
-  }
-
-  private applyFitZoom(): void {
-    this.isAutoZoom = true;
-    this.scheduleLayoutRefresh(true);
-  }
-
-  private clientToGridCoordinates(event: MouseEvent): Point {
-    const wrapper = this.targetDoc.getElementById('cb-visual-grid-wrapper');
-    if (!wrapper) {
-      return { x: event.clientX, y: event.clientY };
-    }
-    const rect = wrapper.getBoundingClientRect();
-    const scale = this.currentZoom || 1;
-    return {
-      x: (event.clientX - rect.left) / scale,
-      y: (event.clientY - rect.top) / scale
-    };
   }
 
   private focusHeaderInput(colIndex: number): void {
@@ -457,7 +258,6 @@ export class VisualEditor {
       toggleBtn.textContent = '✓ Заголовки';
     }
 
-    // Убеждаемся, что поля обновлены перед фокусом
     this.renderHeadersInputs();
 
     const inputsContainer = this.targetDoc.getElementById('cb-visual-headers-inputs');
@@ -480,16 +280,13 @@ export class VisualEditor {
       console.warn('[Cardbord][VisualEditor] ArrowRenderer not initialized');
       return;
     }
-    console.debug('[Cardbord][VisualEditor] Rendering arrows:', {
-      arrows: this.currentData.arrows.length,
-      cards: this.currentData.cards.length
-    });
+
     this.arrowRenderer.renderArrows(
       this.currentData.arrows,
       this.currentData.cards,
       (arrow) => this.showArrowEditor(arrow)
     );
-    this.scheduleLayoutRefresh(this.isAutoZoom);
+    this.viewportController.scheduleLayoutRefresh(this.viewportController.isAuto());
   }
 
   /**
@@ -514,8 +311,7 @@ export class VisualEditor {
         floatingHeaders.innerHTML = '';
         floatingHeaders.style.gridTemplateColumns = `repeat(${this.currentData.cols}, ${CELL_WIDTH}px)`;
         floatingHeaders.style.columnGap = `${GAP}px`;
-        const unscaledWidth = this.gridPixelWidth || baseGridWidth;
-        floatingHeaders.style.width = `${unscaledWidth}px`;
+        floatingHeaders.style.width = `${baseGridWidth}px`;
 
         for (let c = 0; c < this.currentData.cols; c++) {
           const headerValue = this.currentData.columnHeaders[c] ?? '';
@@ -536,18 +332,17 @@ export class VisualEditor {
 
     for (let r = 0; r < this.currentData.rows; r++) {
       for (let c = 0; c < this.currentData.cols; c++) {
-        const card = this.currentData.cards.find(card => card.row === r && card.col === c);
+        const card = this.currentData.cards.find(cardItem => cardItem.row === r && cardItem.col === c);
         const cell = this.createCell(r, c, card);
         editor.appendChild(cell);
       }
     }
 
-    // Применяем автомасштабирование текста после рендеринга
     setTimeout(() => {
       applyEditorTextScaling(editor);
     }, 50);
 
-    this.scheduleLayoutRefresh(this.isAutoZoom);
+    this.viewportController.scheduleLayoutRefresh(this.viewportController.isAuto());
   }
 
   /**
@@ -565,7 +360,22 @@ export class VisualEditor {
       this.setupEmptyCell(cell, row, col);
     }
 
-    this.attachCellDragEvents(cell, card);
+    this.dragController.setupCellDrop(cell);
+
+    if (card) {
+      cell.addEventListener('mouseup', (e) => {
+        if (
+          this.arrowCreationController.isCreatingArrow &&
+          this.arrowCreationController.startCard &&
+          this.arrowCreationController.startCard.id !== card.id
+        ) {
+          const point = this.viewportController.clientToGridCoordinates(e);
+          const nearestSide = getNearestSide(point, card, false);
+          this.arrowCreationController.complete(card, nearestSide);
+        }
+      });
+    }
+
     return cell;
   }
 
@@ -578,7 +388,6 @@ export class VisualEditor {
     cell.classList.add('cardbord-editor-cell-card');
     cell.dataset.cardId = card.id;
 
-    // Создаем контейнер для текста с markdown ПЕРЕД anchor points
     const textContainer = this.targetDoc.createElement('div');
     textContainer.className = 'cardbord-card-text';
     textContainer.innerHTML = renderMarkdown(card.text);
@@ -587,48 +396,30 @@ export class VisualEditor {
     if (Array.isArray(card.stickers) && card.stickers.length) {
       cell.classList.add('cardbord-editor-cell--with-sticker');
       card.stickers.forEach(sticker => {
-        cell.appendChild(this.createStickerElement(card, sticker));
-        console.debug('[Cardbord][Sticker] Added sticker element in editor cell', {
-          cardId: card.id,
-          sticker
-        });
+        cell.appendChild(this.stickerController.createStickerElement(card, sticker, this.targetDoc));
       });
     }
 
-    // Создаем anchor points ПОСЛЕ текста
     const anchors: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
     anchors.forEach(side => {
       const anchor = this.createAnchorPoint(side, card);
       cell.appendChild(anchor);
     });
 
-    // Клик для показа anchor points
     cell.addEventListener('click', () => {
-      if (!this.state.isDragging && !this.state.isCreatingArrow) {
+      if (!this.dragController.isDragging && !this.arrowCreationController.isCreatingArrow) {
         this.toggleCardSelection(card, cell);
       }
     });
 
-    // Двойной клик для редактирования
     cell.addEventListener('dblclick', () => {
-      if (!this.state.isDragging) {
+      if (!this.dragController.isDragging) {
         this.state.selectedCell = { row: card.row, col: card.col };
         this.showCardEditor(card);
       }
     });
 
-    // Drag events
-    cell.addEventListener('dragstart', () => {
-      this.state.isDragging = true;
-      this.state.draggedCard = card;
-      cell.style.opacity = '0.4';
-    });
-
-    cell.addEventListener('dragend', () => {
-      setTimeout(() => { this.state.isDragging = false; }, 100);
-      cell.style.opacity = '1';
-      this.clearDragHighlights();
-    });
+    this.dragController.setupCardDrag(cell, card);
   }
 
   /**
@@ -639,7 +430,7 @@ export class VisualEditor {
     cell.classList.add('cardbord-editor-cell-empty');
 
     cell.addEventListener('click', () => {
-      if (!this.state.isDragging && !this.state.isCreatingArrow) {
+      if (!this.dragController.isDragging && !this.arrowCreationController.isCreatingArrow) {
         this.state.selectedCell = { row, col };
         this.showCardEditor();
       }
@@ -657,242 +448,10 @@ export class VisualEditor {
     anchor.addEventListener('mousedown', (e) => {
       e.stopPropagation();
       e.preventDefault();
-      this.startArrowCreation(card, side);
+      this.arrowCreationController.start(card, side);
     });
 
     return anchor;
-  }
-
-  private createStickerElement(card: Card, sticker: CardSticker): HTMLElement {
-    const element = this.targetDoc.createElement('div');
-    const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(sticker.text.trim());
-    element.className = `cardbord-card-sticker cardbord-card-sticker--${sticker.corner}`;
-    if (isEmojiOnly) element.classList.add('cardbord-card-sticker--emoji');
-    element.textContent = sticker.text;
-    element.setAttribute('data-corner', sticker.corner);
-    element.style.setProperty('--cb-sticker-accent', sticker.color ?? card.color);
-    return element;
-  }
-
-  /**
-   * Начинает создание стрелки
-   */
-  private startArrowCreation(card: Card, side: AnchorSide): void {
-    console.log('[Cardbord] Starting arrow creation', { cardId: card.id, side });
-
-    // Отключаем draggable на всех карточках
-    this.targetDoc.querySelectorAll('.cardbord-editor-cell-card').forEach((el: any) => {
-      el.draggable = false;
-    });
-
-    this.state.isCreatingArrow = true;
-    this.state.arrowStartCard = card;
-    this.state.arrowStartSide = side;
-
-    // Добавляем слушатель mousemove для фантомной стрелки (на document для глобального отслеживания)
-    console.log('[Cardbord] Adding mousemove listener to document');
-    this.targetDoc.addEventListener('mousemove', this.handleArrowDrag);
-
-    // Добавляем слушатель mouseup для завершения
-    console.log('[Cardbord] Adding mouseup listener');
-    this.targetDoc.addEventListener('mouseup', this.handleArrowEnd);
-  }
-
-  /**
-   * Обрабатывает перетаскивание стрелки и рисует фантомную линию
-   */
-  private handleArrowDrag = (e: MouseEvent): void => {
-    if (!this.state.isCreatingArrow || !this.state.arrowStartCard || !this.state.arrowStartSide) {
-      console.debug('[Cardbord] Arrow drag skipped - not creating arrow');
-      return;
-    }
-
-    const svg = this.targetDoc.querySelector('.cardbord-editor-arrows-svg') as SVGSVGElement;
-    if (!svg) {
-      console.error('[Cardbord] SVG not found for phantom arrow');
-      return;
-    }
-
-    console.debug('[Cardbord] Drawing phantom arrow', { x: e.clientX, y: e.clientY });
-
-    // Удаляем старую фантомную линию
-    const existingPhantom = svg.querySelector('.cardbord-phantom-arrow');
-    if (existingPhantom) existingPhantom.remove();
-
-    // Получаем координаты начальной точки
-    const startPoint = getAnchorPoint(this.state.arrowStartCard, this.state.arrowStartSide, false);
-
-    // Получаем координаты мыши относительно SVG
-    const svgRect = svg.getBoundingClientRect();
-    const scale = this.currentZoom || 1;
-    const mouseX = (e.clientX - svgRect.left) / scale;
-    const mouseY = (e.clientY - svgRect.top) / scale;
-
-    // Убираем класс magnetic со всех anchor points
-    this.targetDoc.querySelectorAll('.cardbord-anchor-magnetic').forEach((el) => {
-      el.classList.remove('cardbord-anchor-magnetic');
-    });
-
-    // Проверяем, находимся ли мы рядом с какой-то карточкой
-    let endPoint = { x: mouseX, y: mouseY };
-    let snapToAnchor = false;
-    let magneticAnchorEl: HTMLElement | null = null;
-    let targetCard: Card | null = null;
-    let targetSide: AnchorSide | null = null;
-    let minDistance = 30; // Начальный порог для магнитного притяжения
-
-    // Ищем ближайший anchor point
-    for (const card of this.currentData.cards) {
-      if (card.id === this.state.arrowStartCard.id) continue;
-
-      // Проверяем расстояние до каждой грани
-      const sides: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
-      for (const side of sides) {
-        const anchorPoint = getAnchorPoint(card, side, false);
-        const dist = Math.sqrt(Math.pow(mouseX - anchorPoint.x, 2) + Math.pow(mouseY - anchorPoint.y, 2));
-
-        // Если курсор близко к anchor point И это ближайшая точка
-        if (dist < minDistance) {
-          endPoint = anchorPoint;
-          snapToAnchor = true;
-          targetCard = card;
-          targetSide = side;
-          minDistance = dist; // Обновляем минимальное расстояние
-
-          // Находим DOM элемент anchor point
-          const cell = this.targetDoc.querySelector(`[data-card-id="${card.id}"]`);
-          if (cell) {
-            magneticAnchorEl = cell.querySelector(`.cardbord-anchor-${side}`) as HTMLElement;
-          }
-        }
-      }
-    }
-
-    // Сохраняем информацию о магнитной привязке
-    (this.state as any).magneticTargetCard = targetCard;
-    (this.state as any).magneticTargetSide = targetSide;
-
-    // Подсвечиваем anchor point при магнитном притяжении
-    if (magneticAnchorEl) {
-      magneticAnchorEl.classList.add('cardbord-anchor-magnetic');
-    }
-
-    // Рисуем фантомную линию
-    const phantomLine = this.targetDoc.createElementNS('http://www.w3.org/2000/svg', 'line');
-    phantomLine.setAttribute('class', 'cardbord-phantom-arrow');
-    phantomLine.setAttribute('x1', startPoint.x.toString());
-    phantomLine.setAttribute('y1', startPoint.y.toString());
-    phantomLine.setAttribute('x2', endPoint.x.toString());
-    phantomLine.setAttribute('y2', endPoint.y.toString());
-    phantomLine.setAttribute('stroke', snapToAnchor ? this.colors[0] : '#999');
-    phantomLine.setAttribute('stroke-width', '2');
-    phantomLine.setAttribute('stroke-dasharray', '5,5');
-    phantomLine.setAttribute('opacity', '0.6');
-    phantomLine.style.pointerEvents = 'none';
-
-    svg.appendChild(phantomLine);
-  };
-
-  /**
-   * Обрабатывает завершение создания стрелки при mouseup
-   */
-  private handleArrowEnd = (): void => {
-    if (!this.state.isCreatingArrow) return;
-
-    // Проверяем, есть ли магнитная привязка
-    const targetCard = (this.state as any).magneticTargetCard;
-    const targetSide = (this.state as any).magneticTargetSide;
-
-    if (targetCard && targetSide) {
-      this.endArrowCreation(targetCard, targetSide);
-    } else {
-      // Отменяем создание стрелки если не прицепились к карточке
-      this.cancelArrowCreation();
-    }
-  };
-
-  /**
-   * Отменяет создание стрелки
-   */
-  private cancelArrowCreation(): void {
-    // Удаляем слушатели
-    this.targetDoc.removeEventListener('mousemove', this.handleArrowDrag);
-    this.targetDoc.removeEventListener('mouseup', this.handleArrowEnd);
-
-    // Удаляем фантомную линию
-    const svg = this.targetDoc.querySelector('.cardbord-editor-arrows-svg') as SVGSVGElement;
-    if (svg) {
-      const phantom = svg.querySelector('.cardbord-phantom-arrow');
-      if (phantom) phantom.remove();
-    }
-
-    // Убираем подсветку anchor points
-    this.targetDoc.querySelectorAll('.cardbord-anchor-magnetic').forEach((el) => {
-      el.classList.remove('cardbord-anchor-magnetic');
-    });
-
-    // Включаем обратно draggable
-    this.targetDoc.querySelectorAll('.cardbord-editor-cell-card').forEach((el: any) => {
-      el.draggable = true;
-    });
-
-    // Сбрасываем состояние
-    this.state.isCreatingArrow = false;
-    this.state.arrowStartCard = null;
-    this.state.arrowStartSide = null;
-    (this.state as any).magneticTargetCard = null;
-    (this.state as any).magneticTargetSide = null;
-  }
-
-  /**
-   * Завершает создание стрелки
-   */
-  private endArrowCreation(targetCard: Card, targetSide: AnchorSide): void {
-    // Удаляем слушатели
-    this.targetDoc.removeEventListener('mousemove', this.handleArrowDrag);
-    this.targetDoc.removeEventListener('mouseup', this.handleArrowEnd);
-
-    // Удаляем фантомную линию
-    const svg = this.targetDoc.querySelector('.cardbord-editor-arrows-svg') as SVGSVGElement;
-    if (svg) {
-      const phantom = svg.querySelector('.cardbord-phantom-arrow');
-      if (phantom) phantom.remove();
-    }
-
-    // Убираем подсветку anchor points
-    this.targetDoc.querySelectorAll('.cardbord-anchor-magnetic').forEach((el) => {
-      el.classList.remove('cardbord-anchor-magnetic');
-    });
-
-    // Включаем обратно draggable
-    this.targetDoc.querySelectorAll('.cardbord-editor-cell-card').forEach((el: any) => {
-      el.draggable = true;
-    });
-
-    if (
-      this.state.isCreatingArrow &&
-      this.state.arrowStartCard &&
-      this.state.arrowStartSide &&
-      this.state.arrowStartCard.id !== targetCard.id
-    ) {
-      const newArrow: Arrow = {
-        id: Date.now().toString(),
-        from: this.state.arrowStartCard.id,
-        to: targetCard.id,
-        fromSide: this.state.arrowStartSide,
-        toSide: targetSide,
-        color: this.colors[0]
-      };
-      this.currentData.arrows.push(newArrow);
-      this.renderArrows();
-    }
-
-    // Сбрасываем состояние
-    this.state.isCreatingArrow = false;
-    this.state.arrowStartCard = null;
-    this.state.arrowStartSide = null;
-    (this.state as any).magneticTargetCard = null;
-    (this.state as any).magneticTargetSide = null;
   }
 
   /**
@@ -902,12 +461,10 @@ export class VisualEditor {
     const wasSelected = this.state.selectedCard?.id === card.id;
     this.state.selectedCard = wasSelected ? null : card;
 
-    // Скрываем все anchor points
     this.targetDoc.querySelectorAll('.cardbord-anchor-point').forEach((el: any) => {
       el.classList.remove('cardbord-anchor-visible');
     });
 
-    // Показываем anchor points выбранной карточки
     if (this.state.selectedCard && !wasSelected) {
       cell.querySelectorAll('.cardbord-anchor-point').forEach((el: any) => {
         el.classList.add('cardbord-anchor-visible');
@@ -916,105 +473,21 @@ export class VisualEditor {
   }
 
   /**
-   * Прикрепляет события drag-and-drop к ячейке
-   */
-  private attachCellDragEvents(cell: HTMLElement, card?: Card): void {
-    cell.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      if (this.state.draggedCard) {
-        cell.classList.add('cardbord-editor-cell-dragover');
-      }
-    });
-
-    cell.addEventListener('dragleave', () => {
-      cell.classList.remove('cardbord-editor-cell-dragover');
-    });
-
-    cell.addEventListener('drop', (e) => {
-      e.preventDefault();
-      const targetRow = parseInt(cell.dataset.row!);
-      const targetCol = parseInt(cell.dataset.col!);
-
-      if (this.state.draggedCard) {
-        this.moveCard(this.state.draggedCard, targetRow, targetCol);
-        this.state.draggedCard = null;
-        this.renderGridEditor();
-        this.renderArrows();
-      }
-    });
-
-    // Mouseup для создания стрелок на карточках
-    if (card) {
-      cell.addEventListener('mouseup', (e) => {
-        if (
-          this.state.isCreatingArrow &&
-          this.state.arrowStartCard &&
-          this.state.arrowStartCard.id !== card.id
-        ) {
-          const point = this.clientToGridCoordinates(e);
-          const nearestSide = getNearestSide(point, card, false);
-          this.endArrowCreation(card, nearestSide);
-        }
-      });
-    }
-  }
-
-  /**
-   * Перемещает карточку
-   */
-  private moveCard(card: Card, targetRow: number, targetCol: number): void {
-    const targetCard = this.currentData.cards.find(c => c.row === targetRow && c.col === targetCol);
-
-    if (targetCard && targetCard.id !== card.id) {
-      // Меняем местами
-      const draggedIndex = this.currentData.cards.findIndex(c => c.id === card.id);
-      const targetIndex = this.currentData.cards.findIndex(c => c.id === targetCard.id);
-
-      const tempRow = targetCard.row;
-      const tempCol = targetCard.col;
-
-      this.currentData.cards[targetIndex].row = card.row;
-      this.currentData.cards[targetIndex].col = card.col;
-      this.currentData.cards[draggedIndex].row = tempRow;
-      this.currentData.cards[draggedIndex].col = tempCol;
-    } else {
-      // Просто перемещаем
-      const cardIndex = this.currentData.cards.findIndex(c => c.id === card.id);
-      this.currentData.cards[cardIndex].row = targetRow;
-      this.currentData.cards[cardIndex].col = targetCol;
-    }
-  }
-
-  /**
-   * Убирает подсветку drag-over
-   */
-  private clearDragHighlights(): void {
-    this.targetDoc.querySelectorAll('.cardbord-editor-cell').forEach((el) => {
-      el.classList.remove('cardbord-editor-cell-dragover');
-    });
-  }
-
-  /**
    * Показывает редактор карточки
    */
   private showCardEditor(card?: Card): void {
     const editor = this.targetDoc.getElementById('cb-visual-card-editor');
-    const textArea = this.targetDoc.getElementById('cb-visual-card-text') as HTMLTextAreaElement;
+    const textArea = this.targetDoc.getElementById('cb-visual-card-text') as HTMLTextAreaElement | null;
     const colorPicker = this.targetDoc.getElementById('cb-visual-color-picker');
     const deleteBtn = this.targetDoc.getElementById('cb-visual-delete-card');
 
     if (!editor || !textArea || !colorPicker || !deleteBtn) return;
 
-    // Скрываем редактор стрелок
     const arrowEditor = this.targetDoc.getElementById('cb-visual-arrow-editor');
     if (arrowEditor) arrowEditor.classList.add('cardbord-panel-hidden');
 
     editor.classList.remove('cardbord-panel-hidden');
     textArea.value = card?.text || '';
-    console.debug('[Cardbord][Sticker] showCardEditor', {
-      cardId: card?.id,
-      stickers: card?.stickers
-    });
 
     colorPicker.innerHTML = this.colors.map(color =>
       `<button
@@ -1033,66 +506,16 @@ export class VisualEditor {
       });
     });
 
-    this.stickerDrafts = {};
-    if (card?.stickers) {
-      card.stickers.forEach(({ corner, text }) => {
-        this.stickerDrafts[corner] = text;
-      });
-    }
-
-    const stickerInputs = Array.from(this.targetDoc.querySelectorAll<HTMLInputElement>('.cardbord-sticker-input'));
-    stickerInputs.forEach(input => {
-      const corner = input.dataset.corner as StickerCorner | undefined;
-      if (!corner) return;
-      input.value = this.stickerDrafts[corner] ?? '';
-      input.oninput = () => {
-        const value = input.value;
-        if (value.trim()) {
-          this.stickerDrafts[corner] = value;
-        } else {
-          delete this.stickerDrafts[corner];
-        }
-      };
-    });
-
-    const perCornerClearButtons = Array.from(this.targetDoc.querySelectorAll<HTMLButtonElement>('.cardbord-sticker-clear'));
-    perCornerClearButtons.forEach(btn => {
-      const corner = btn.dataset.corner as StickerCorner | undefined;
-      if (!corner) return;
-      btn.onclick = (event) => {
-        event.preventDefault();
-        const input = this.targetDoc.querySelector<HTMLInputElement>(`#cb-visual-sticker-${corner}`);
-        if (input) input.value = '';
-        delete this.stickerDrafts[corner];
-        console.debug('[Cardbord][Sticker] Sticker cleared in editor', {
-          cardId: card?.id,
-          corner
-        });
-      };
-    });
-
-    const clearAllBtn = this.targetDoc.getElementById('cb-visual-clear-stickers') as HTMLButtonElement | null;
-    if (clearAllBtn) {
-      clearAllBtn.onclick = (event) => {
-        event.preventDefault();
-        this.stickerDrafts = {};
-        stickerInputs.forEach(input => {
-          input.value = '';
-        });
-        console.debug('[Cardbord][Sticker] Cleared all stickers in editor', { cardId: card?.id });
-      };
-    }
+    this.stickerController.bindEditorInputs(this.targetDoc, card);
 
     deleteBtn.style.display = card ? 'inline-block' : 'none';
 
-    // Разрешаем multiline - предотвращаем срабатывание Enter как submit
     textArea.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        e.stopPropagation(); // Не даем событию всплыть выше
+        e.stopPropagation();
       }
     });
 
-    // Фокус на textarea
     setTimeout(() => textArea.focus(), 100);
   }
 
@@ -1105,7 +528,6 @@ export class VisualEditor {
 
     if (!editor || !colorPicker) return;
 
-    // Скрываем редактор карточек
     const cardEditor = this.targetDoc.getElementById('cb-visual-card-editor');
     if (cardEditor) cardEditor.classList.add('cardbord-panel-hidden');
 
@@ -1138,19 +560,17 @@ export class VisualEditor {
    * Прикрепляет обработчики событий
    */
   private attachEventListeners(): void {
-    // Обновление размера сетки
     const updateGridBtn = this.targetDoc.getElementById('cb-visual-update-grid');
     updateGridBtn?.addEventListener('click', () => {
       const rowsInput = this.targetDoc.getElementById('cb-visual-rows') as HTMLInputElement;
       const colsInput = this.targetDoc.getElementById('cb-visual-cols') as HTMLInputElement;
 
-      this.currentData.rows = parseInt(rowsInput.value);
-      this.currentData.cols = parseInt(colsInput.value);
+      this.currentData.rows = parseInt(rowsInput.value, 10);
+      this.currentData.cols = parseInt(colsInput.value, 10);
       this.currentData.cards = this.currentData.cards.filter(
         c => c.row < this.currentData.rows && c.col < this.currentData.cols
       );
 
-      // Обновляем заголовки если они есть
       if (this.currentData.columnHeaders) {
         this.updateHeadersArray();
       }
@@ -1159,35 +579,29 @@ export class VisualEditor {
       this.initializeArrowRenderer();
       this.renderArrows();
       this.renderHeadersInputs();
-      this.scheduleLayoutRefresh(true);
+      this.viewportController.refreshWorkspaceLayout(true);
     });
 
-    // Toggle заголовков колонок
     const toggleHeadersBtn = this.targetDoc.getElementById('cb-visual-toggle-headers');
     toggleHeadersBtn?.addEventListener('click', () => {
       this.toggleHeaders();
     });
 
-    // Сохранение карточки
     const saveCardBtn = this.targetDoc.getElementById('cb-visual-save-card');
     saveCardBtn?.addEventListener('click', () => this.saveCard());
 
-    // Удаление карточки
     const deleteCardBtn = this.targetDoc.getElementById('cb-visual-delete-card');
     deleteCardBtn?.addEventListener('click', () => this.deleteCard());
 
-    // Отмена редактирования карточки
     const cancelCardBtn = this.targetDoc.getElementById('cb-visual-cancel-card');
     cancelCardBtn?.addEventListener('click', () => {
       const editor = this.targetDoc.getElementById('cb-visual-card-editor');
       editor?.classList.add('cardbord-panel-hidden');
     });
 
-    // Удаление стрелки
     const deleteArrowBtn = this.targetDoc.getElementById('cb-visual-delete-arrow');
     deleteArrowBtn?.addEventListener('click', () => this.deleteArrow());
 
-    // Отмена редактирования стрелки
     const cancelArrowBtn = this.targetDoc.getElementById('cb-visual-cancel-arrow');
     cancelArrowBtn?.addEventListener('click', () => {
       const editor = this.targetDoc.getElementById('cb-visual-arrow-editor');
@@ -1195,22 +609,20 @@ export class VisualEditor {
       this.state.selectedArrow = null;
     });
 
-    // Сохранение и закрытие
     const saveBtn = this.targetDoc.getElementById('cb-visual-save');
     saveBtn?.addEventListener('click', () => this.saveAndClose());
 
-    // Отмена
     const cancelBtn = this.targetDoc.getElementById('cb-visual-cancel');
     cancelBtn?.addEventListener('click', () => this.hide());
 
     const zoomInBtn = this.targetDoc.getElementById('cb-visual-zoom-in');
-    zoomInBtn?.addEventListener('click', () => this.adjustZoom(VisualEditor.ZOOM_STEP));
+    zoomInBtn?.addEventListener('click', () => this.viewportController.adjustZoom(CanvasViewportController.ZOOM_STEP));
 
     const zoomOutBtn = this.targetDoc.getElementById('cb-visual-zoom-out');
-    zoomOutBtn?.addEventListener('click', () => this.adjustZoom(-VisualEditor.ZOOM_STEP));
+    zoomOutBtn?.addEventListener('click', () => this.viewportController.adjustZoom(-CanvasViewportController.ZOOM_STEP));
 
     const fitBtn = this.targetDoc.getElementById('cb-visual-zoom-fit');
-    fitBtn?.addEventListener('click', () => this.applyFitZoom());
+    fitBtn?.addEventListener('click', () => this.viewportController.applyFitZoom());
   }
 
   /**
@@ -1233,22 +645,7 @@ export class VisualEditor {
       c => c.row === this.state.selectedCell!.row && c.col === this.state.selectedCell!.col
     );
 
-    const stickers = VisualEditor.STICKER_CORNERS.reduce<CardSticker[]>((acc, corner) => {
-      const draft = this.stickerDrafts[corner];
-      if (!draft) return acc;
-      const trimmed = draft.trim();
-      if (!trimmed) {
-        delete this.stickerDrafts[corner];
-        return acc;
-      }
-      acc.push({ corner, text: trimmed.slice(0, 16) });
-      return acc;
-    }, []);
-
-    this.stickerDrafts = stickers.reduce<Partial<Record<StickerCorner, string>>>((acc, sticker) => {
-      acc[sticker.corner] = sticker.text;
-      return acc;
-    }, {});
+    const stickers = this.stickerController.buildCardStickers();
 
     const card: Card = {
       id: existingCardIndex >= 0 ? this.currentData.cards[existingCardIndex].id : Date.now().toString(),
@@ -1264,14 +661,6 @@ export class VisualEditor {
     } else {
       this.currentData.cards.push(card);
     }
-
-    console.debug('[Cardbord][Sticker] saveCard', {
-      cell: this.state.selectedCell,
-      stickers,
-      color,
-      hasExisting: existingCardIndex >= 0
-    });
-    console.debug('[Cardbord][Sticker] cardSavedState', card);
 
     const editor = this.targetDoc.getElementById('cb-visual-card-editor');
     editor?.classList.add('cardbord-panel-hidden');
@@ -1329,11 +718,7 @@ export class VisualEditor {
    */
   private async saveAndClose(): Promise<void> {
     try {
-      const encoded = encodeGridData(this.currentData);
-      await logseq.Editor.updateBlock(
-        this.blockUuid,
-        `{{renderer ${RENDERER_TYPE}, ${encoded}}}`
-      );
+      await this.gridDataManager.save(this.blockUuid, this.currentData);
       logseq.UI.showMsg('Cardbord сохранен ✅', 'success');
       this.hide();
     } catch (err) {
@@ -1357,14 +742,11 @@ export class VisualEditor {
    */
   private toggleHeaders(): void {
     if (this.currentData.columnHeaders) {
-      // Убираем заголовки
       delete this.currentData.columnHeaders;
     } else {
-      // Добавляем пустые заголовки
       this.currentData.columnHeaders = Array(this.currentData.cols).fill('');
     }
 
-    // Обновляем UI
     const panel = this.targetDoc.getElementById('cb-visual-headers-panel');
     const btn = this.targetDoc.getElementById('cb-visual-toggle-headers');
 
@@ -1382,7 +764,7 @@ export class VisualEditor {
 
     this.renderHeadersInputs();
     this.renderGridEditor();
-    this.scheduleLayoutRefresh(this.isAutoZoom);
+    this.viewportController.scheduleLayoutRefresh(this.viewportController.isAuto());
   }
 
   /**
@@ -1413,7 +795,7 @@ export class VisualEditor {
 
       input.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
-        const idx = parseInt(target.dataset.colIndex || '0');
+        const idx = parseInt(target.dataset.colIndex || '0', 10);
         if (this.currentData.columnHeaders) {
           this.currentData.columnHeaders[idx] = target.value;
         }

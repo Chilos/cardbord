@@ -130,6 +130,10 @@ describe('ArrowRenderer', () => {
 
       // Check if cursor style is set
       expect(group.style.cursor).toBe('pointer');
+
+      // Check that click event invokes callback
+      group.dispatchEvent(new MouseEvent('click'));
+      expect(clicked).toBe(true);
     });
 
     it('should set correct arrow colors', () => {

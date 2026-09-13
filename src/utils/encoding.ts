@@ -25,8 +25,17 @@ export function encodeGridData(data: GridData): string {
  */
 export function decodeGridData(encoded: string): GridData {
   try {
-    const utf8String = atob(encoded);
-    const jsonString = decodeURIComponent(utf8String);
+    const raw = atob(encoded);
+    let jsonString: string;
+    try {
+      jsonString = decodeURIComponent(raw);
+    } catch {
+      try {
+        jsonString = decodeURIComponent(escape(raw));
+      } catch {
+        jsonString = raw;
+      }
+    }
     return JSON.parse(jsonString);
   } catch (err) {
     console.warn('[Cardbord] Failed to decode grid data, using defaults:', err);

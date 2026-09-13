@@ -1,10 +1,11 @@
 {
   "name": "logseq-plugin-cardbord",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Плагин для создания интерактивных сеток с карточками в Logseq",
   "main": "dist/index.js",
   "scripts": {
-    "build": "npm run update-version && esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && npm run update-version && esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text",
     "build:release": "npm run update-version && npm run build",
     "update-version": "node scripts/update-version.js",
     "dev": "esbuild src/index.ts --bundle --outfile=dist/index.js --external:@logseq/libs --format=iife --global-name=CardbordPlugin --loader:.css=text --watch",
@@ -32,7 +33,6 @@
     "@vitest/coverage-v8": "^3.2.4",
     "@vitest/ui": "^3.2.4",
     "esbuild": "^0.19.0",
-    "happy-dom": "^17.6.1",
     "jsdom": "^26.1.0",
     "typescript": "^5.0.0",
     "vitest": "^3.2.4"
